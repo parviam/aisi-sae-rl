@@ -1,0 +1,18 @@
+name: rl_env
+channels:
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - pytorch
+  - torchvision
+  - torchaudio
+  - cudatoolkit=11.8
+  - matplotlib
+  - pandas
+  - pip
+  - pip:
+      - stable-baselines3
+      - gym
+      - shimmy
