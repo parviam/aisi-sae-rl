@@ -16,3 +16,5 @@ dependencies:
       - stable-baselines3
       - gym
       - shimmy
+      - procgen
+      - pygame
