@@ -71,7 +71,7 @@ def evaluation(env, save_folder: str, model_name: str):
         checkpoint_path = os.path.join(save_folder, checkpoint_file)
         _, _ = env.reset()
 
-        # run e valuation
+        # run evaluation
         loaded_model = PPO.load(checkpoint_path, env=env)
         mean_reward, std_reward = evaluate_policy(loaded_model, env, n_eval_episodes=10)
 

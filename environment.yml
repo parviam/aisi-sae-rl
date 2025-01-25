@@ -7,7 +7,6 @@ dependencies:
   - python=3.9
   - pytorch
   - torchvision
-  - torchaudio
   - cudatoolkit=11.8
   - matplotlib
   - pandas
@@ -18,3 +17,4 @@ dependencies:
       - shimmy
       - procgen
       - pygame
+      - torchaudio
