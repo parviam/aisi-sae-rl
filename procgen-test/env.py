@@ -7,7 +7,7 @@ import time
 import torch
 
 
-def run_environment(env: gym.Env, num_episodes: int = 1, render: bool = True, policy: torch.nn.Module = None):
+def run_environment(env: gym.Env, num_episodes: int = 1, render_with_pygame: bool = True, policy: torch.nn.Module = None):
     """
     Main function to run the environment.
 
@@ -21,7 +21,7 @@ def run_environment(env: gym.Env, num_episodes: int = 1, render: bool = True, po
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     for episode in range(num_episodes):
-        if render:
+        if render_with_pygame:
             pygame.init()
             display_surface = pygame.display.set_mode((512, 512), 0, 32)
             clock = pygame.time.Clock()
@@ -57,7 +57,7 @@ def run_environment(env: gym.Env, num_episodes: int = 1, render: bool = True, po
 
         print(f"Episode {episode + 1} completed with total reward: {total_reward}")
 
-def make_and_run_environment(env_name: str = "coinrun", num_levels: int = 10, start_level: int = 0, distribution_mode: str = "easy",  render_mode: str = None, num_episodes: int = 1, render: bool = True, policy: torch.nn.module = None):
+def make_and_run_environment(env_name: str = "coinrun", num_levels: int = 10, start_level: int = 0, distribution_mode: str = "easy",  render_mode: str = None, num_episodes: int = 1, render_with_pygame: bool = True, policy: torch.nn.module = None):
     """
     Wrapper method that makes a given procgen environment, runs a model on the environemnt, and exits gracefully.
 
@@ -73,7 +73,7 @@ def make_and_run_environment(env_name: str = "coinrun", num_levels: int = 10, st
     """
     full_env_name = f"procgen:procgen-{env_name}-v0"
     env = gym.make(full_env_name, num_levels=num_levels, start_level=start_level,distribution_mode=distribution_mode, render_mode=render_mode)
-    run_environment(env, num_episodes=num_episodes, render=render, policy=policy)
+    run_environment(env, num_episodes=num_episodes, render_with_pygame=render_with_pygame, policy=policy)
     env.close()
 
 if __name__ == "__main__":
