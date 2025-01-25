@@ -7,14 +7,14 @@ import time
 import torch
 
 
-def run_environment(env, num_episodes=1, render=True, policy=None):
+def run_environment(env: gym.Env, num_episodes: int = 1, render: bool = True, policy: torch.nn.Module = None):
     """
     Main function to run the environment.
 
     Args:
         env (gym.Env): The Procgen environment
-        num_episodes (int): Number of episodes to run
-        render (bool): Whether to render the environment using pygame
+        num_episodes (int): Number of episodes to run. Default 1.
+        render (bool): Whether to render the environment using pygame. Default True.
         policy (nn module): Pretrained policy. If left as "None", the environment will run with a random policy.
     """
 
@@ -57,16 +57,24 @@ def run_environment(env, num_episodes=1, render=True, policy=None):
 
         print(f"Episode {episode + 1} completed with total reward: {total_reward}")
 
+def make_and_run_environment(env_name: str = "coinrun", num_levels: int = 10, start_level: int = 0, distribution_mode: str = "easy",  render_mode: str = None, num_episodes: int = 1, render: bool = True, policy: torch.nn.module = None):
+    """
+    Wrapper method that makes a given procgen environment, runs a model on the environemnt, and exits gracefully.
+
+    Args:
+        env_name (string): The name of the Procgen environment to run. Default \"coinrun\".
+        num_levels (int): The number of levels for the env. Default 10.
+        start_level (int): What level to start at. Default 0.
+        distribution_mode (str): Difficulty of levels generated. "easy" (default), "hard", "extreme", or "memory".
+        render_mode (str): Determines how env should be visualized. "human", "rgb_array", None (default) are common.
+        num_episodes (int): Number of episodes to run. Default 1.
+        render (bool): Whether to render the environment using pygame. Default True.
+        policy (nn module): Pretrained policy. If left as "None", the environment will run with a random policy.
+    """
+    full_env_name = f"procgen:procgen-{env_name}-v0"
+    env = gym.make(full_env_name, num_levels=num_levels, start_level=start_level,distribution_mode=distribution_mode, render_mode=render_mode)
+    run_environment(env, num_episodes=num_episodes, render=render, policy=policy)
+    env.close()
 
 if __name__ == "__main__":
-
-    env_name = "coinrun"
-    num_levels = 10
-    start_level = 0
-    distribution_mode = "easy"
-    render_mode = "rgb_array"
-
-    env = gym.make(f"procgen:procgen-{env_name}-v0", num_levels=num_levels, start_level=start_level,distribution_mode=distribution_mode, render_mode=render_mode)
-
-    run_environment(env, num_episodes=2)
-    env.close()
+    make_and_run_environment(env_name="coinrun", num_levels=10, start_level=0, distribution_mode="easy", render_mode="rgb_array")
