@@ -48,7 +48,7 @@ def train_model(env, iterations_per_weight_update: int, weight_update_per_save: 
     )
 
     model = PPO(
-        "MlpPolicy", 
+        "CnnPolicy", 
         env,
         n_steps = iterations_per_weight_update, # timesteps before updating weights
         verbose=1)
@@ -69,7 +69,7 @@ def evaluation(env, save_folder: str, model_name: str):
 
     for checkpoint_file in checkpoint_files:
         checkpoint_path = os.path.join(save_folder, checkpoint_file)
-        _, _ = env.reset()
+        _ = env.reset()
 
         # run e valuation
         loaded_model = PPO.load(checkpoint_path, env=env)
