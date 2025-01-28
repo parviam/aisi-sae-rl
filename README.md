@@ -22,3 +22,5 @@ python train-ppo.py \
     --weight_update_per_save 5 \
     --iterations_per_weight_update 10
 ```
+
+*Note `model_name` must be in camel-case**
