@@ -14,7 +14,7 @@ def run_environment(env: gym.Env, num_episodes: int = 1, render_with_pygame: boo
     Args:
         env (gym.Env): The Procgen environment
         num_episodes (int): Number of episodes to run. Default 1.
-        render (bool): Whether to render the environment using pygame. Default True.
+        render_with_pygame (bool): Whether to render the environment using pygame. Default True.
         policy (nn module): Pretrained policy. If left as "None", the environment will run with a random policy.
     """
 
