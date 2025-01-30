@@ -43,7 +43,7 @@ def run_environment(env: gym.Env, num_episodes: int = 1, render_with_pygame: boo
 
             obs, reward, done, info = env.step(action)
 
-            if render:
+            if render_with_pygame:
                 image = env.render(mode='rgb_array')
                 if image is not None:
                     image = PILImage.fromarray(image)
@@ -57,7 +57,7 @@ def run_environment(env: gym.Env, num_episodes: int = 1, render_with_pygame: boo
 
         print(f"Episode {episode + 1} completed with total reward: {total_reward}")
 
-def make_and_run_environment(env_name: str = "coinrun", num_levels: int = 10, start_level: int = 0, distribution_mode: str = "easy",  render_mode: str = None, num_episodes: int = 1, render_with_pygame: bool = True, policy: torch.nn.module = None):
+def make_and_run_environment(env_name: str = "coinrun", num_levels: int = 10, start_level: int = 0, distribution_mode: str = "easy",  render_mode: str = None, num_episodes: int = 1, render_with_pygame: bool = True, policy: torch.nn.Module = None):
     """
     Wrapper method that makes a given procgen environment, runs a model on the environemnt, and exits gracefully.
 
