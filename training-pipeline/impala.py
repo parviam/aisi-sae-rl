@@ -3,13 +3,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from stable_baselines3.common.policies import ActorCriticPolicy
-from gym.spaces import Box
 
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 class Config:
-    USE_BATCH_NORM = 1
-    DROPOUT = 0
-    ARCHITECTURE = 'impala'
+    USE_BATCH_NORM = int(os.getenv("USE_BATCH_NORM"))
+    DROPOUT = int(os.getenv("DROPOUT"))
 
 class ImpalaBlock(nn.Module):
     def __init__(self, in_channels, use_batch_norm=True):
