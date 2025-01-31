@@ -7,6 +7,9 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.callbacks import CheckpointCallback
 
+from impala import ImpalaPolicy
+
+
 def parse_args():
     """
     Parses command-line arguments.
@@ -48,7 +51,7 @@ def train_model(env, iterations_per_weight_update: int, weight_update_per_save: 
     )
 
     model = PPO(
-        "CnnPolicy", 
+        ImpalaPolicy,
         env,
         n_steps = iterations_per_weight_update, # timesteps before updating weights
         verbose=1)
@@ -61,7 +64,6 @@ def train_model(env, iterations_per_weight_update: int, weight_update_per_save: 
     )
 
 def evaluation(env, save_folder: str, model_name: str):
-    latest_checkpoint = f"{save_folder}{model_name}_steps.zip"
     checkpoint_files = [f for f in os.listdir(save_folder) if f.startswith(model_name) and f.endswith("_steps.zip")]
 
     mean_rewards = []
