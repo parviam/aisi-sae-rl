@@ -11,7 +11,7 @@ load_dotenv()
 
 class Config:
     USE_BATCH_NORM = int(os.getenv("USE_BATCH_NORM"))
-    DROPOUT = int(os.getenv("DROPOUT"))
+    DROPOUT = float(os.getenv("DROPOUT"))
 
 class ImpalaBlock(nn.Module):
     def __init__(self, in_channels, use_batch_norm=True):

@@ -53,6 +53,7 @@ def train_model(env, iterations_per_weight_update: int, weight_update_per_save: 
     model = PPO(
         ImpalaPolicy,
         env,
+        learning_rate=2.5e-4,
         n_steps = iterations_per_weight_update, # timesteps before updating weights
         verbose=1)
 
@@ -106,7 +107,7 @@ if __name__ == "__main__":
     args = parse_args()
 
     # Create the environment
-    env = gym.make(args.gym_env)
+    env = gym.make(args.gym_env, start_level=0, num_levels=50_000)
 
     train_model(env, args.iterations_per_weight_update, args.weight_update_per_save, args.save_folder, args.model_name, args.total_timesteps_to_run)
 
