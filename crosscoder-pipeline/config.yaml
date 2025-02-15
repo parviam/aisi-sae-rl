@@ -1,0 +1,22 @@
+# Model related parameters
+seed: 49
+batch_size: 4096
+buffer_mult: 128
+lr: 0.00005
+num_tokens: 400_000_000
+l1_coeff: 2
+beta1: 0.9
+beta2: 0.999
+dict_size: 16384
+seq_len: 1024
+enc_dtype: fp32
+model_name: gemma-2-2b
+site: resid_pre
+device: cuda:0
+model_batch_size: 4
+log_every: 100
+save_every: 30000
+dec_init_norm: 0.08
+hook_point: blocks.14.hook_resid_pre
+wandb_project: YOUR_WANDB_PROJECT
+wandb_entity: YOUR_WANDB_ENTITY
