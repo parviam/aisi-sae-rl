@@ -18,5 +18,6 @@ log_every: 100
 save_every: 30000
 dec_init_norm: 0.08
 hook_point: blocks.14.hook_resid_pre
+hf_token: YOUR_HUGGINGFACE_TOKEN
 wandb_project: YOUR_WANDB_PROJECT
 wandb_entity: YOUR_WANDB_ENTITY
