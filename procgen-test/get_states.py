@@ -1,11 +1,16 @@
 import gymnasium as gym
-import procgen
+from procgen import ProcgenGym3Env
 import numpy as np
+import gym3
 import pygame
+from gym3 import types_np
 from PIL import Image as Image
 import time
 import os
 import torch
+
+
+
 
 ######################## Simple implementation - Just saves n states from coinrun ##########################
 
@@ -14,10 +19,16 @@ def save_observation(observation, step, out_folder):
     Helper function to save an observation as an image file.
 
     Args:
-        observation (numpy.ndarray): The environment observation to save
+        observation (numpy.ndarray): The environment observation with shape (1,64,64,3)
         step (int): The current step number (used for filename)
         out_folder (str): Directory to save the image
     """
+    # Remove the batch dimension to get (64,64,3)
+    observation = observation[0]  # Get the first (and only) item from the batch
+
+    # Ensure the pixel values are in the correct range for PNG (0-255)
+    if observation.dtype == np.float32 or observation.dtype == np.float64:
+        observation = (observation * 255).astype(np.uint8)
 
     img = Image.fromarray(observation)
     filename = os.path.join(out_folder, f'state_{step:05d}.png')
@@ -36,23 +47,30 @@ def get_states(env, policy, num_states, out_folder):
     """
     os.makedirs(out_folder, exist_ok=True)
 
-    observation, info = env.reset()
+    #observation, info = env.reset()
 
     states_collected = 0
     while states_collected < num_states:
-        save_observation(observation, states_collected, out_folder)
+
+        action = types_np.sample(env.ac_space, bshape=(env.num,))
+        env.act(action)
+        rew, obs, first = env.observe()
+        print(f"step {states_collected}, action {action}  reward {rew} first {first}")
+
+        if states_collected > 0 and first:
+            break
         states_collected += 1
 
-        action = policy(observation)
 
-        observation, reward, terminated, truncated, info = env.step(action)
+        save_observation(obs['rgb'], states_collected, out_folder)
 
-        if terminated or truncated:
-            observation, info = env.reset()
+        # Old format (doesn't work for gym3 procgen env
+        #action = policy(observation)
+        #observation, reward, terminated, truncated, info = env.step(action)
+        #if terminated or truncated:
+            #observation, info = env.reset()
 
     env.close()
-
-
 
 ########################### More advanced version with feature quotas ##################################################
 
@@ -162,7 +180,9 @@ def get_diverse_states(env, policy, num_states, out_folder, min_feature_counts=N
 
 if __name__ == '__main__':
 
-    env = gym.make("procgen-coinrun-v0")
+    #env = gym.make("procgen-coinrun-v0") # Deprecated
+    env = ProcgenGym3Env(num=1, env_name="coinrun",render_mode="rgb_array")
+
     policy = lambda obs: env.action_space.sample()
 
     # Simple version that does not include feature quotas
