@@ -3,9 +3,15 @@ import torch
 import tqdm
 import numpy as np
 import einops
+import time
+import os
+
+from procgen import ProcgenGym3Env
+import gym3 # For gym3 version of coinrun
+from PIL import Image as Image
 
 
-class GameStateBuffer:
+class Buffer:
     """Modified Buffer class to store game states from procgen environments"""
 
     def __init__(self, cfg, model_A, model_B, all_tokens, env_name="procgen:procgen-coinrun-v0"):
@@ -28,8 +34,10 @@ class GameStateBuffer:
         ).to(cfg["device"])
 
         # Create environment
-        self.env = gym.make(env_name)
+        #self.env = gym.make(env_name)
+        self.env = ProcgenGym3Env(num=1, env_name="coinrun",render_mode="rgb_array")
         self.policy = lambda obs: self.env.action_space.sample()  # Random policy
+        # If above doesn't work, modify refresh() to use: action = types_np.sample(env.ac_space, bshape=(env.num,))
 
         # Feature detection settings (TODO)
         self.feature_color_ranges = {
@@ -68,7 +76,7 @@ class GameStateBuffer:
         return scaling_factor
 
 
-    def has_feature(self, observation):
+    def has_feature(self, observation): # For feature quotas (Not currently used)
         """Check if an observation contains specific features"""
         features_present = {}
         for feature, ranges in self.feature_color_ranges.items():
@@ -95,20 +103,24 @@ class GameStateBuffer:
             observation, _ = self.env.reset()
 
             for _ in tqdm.trange(num_states):
-                # Check features in current state
-                features = self.has_feature(observation)
-
-                # Determine if we should save this state
+                #features = self.has_feature(observation) # Check features in current state
                 #should_save = any(present for present in features.values()) or np.random.random() < 0.2
+                
                 should_save = True #(TODO) Temporarily bypassing feature quotas.
 
                 if should_save and states_collected < num_states:
                     # Process the observation through both models
                     with torch.no_grad():
-                        obs_tensor = torch.from_numpy(observation).to(self.cfg["device"])
+
+                        # Sample observations from env (New gym3-compliant format)
+                        action = types_np.sample(self.env.ac_space, bshape=(self.env.num,))
+                        self.env.act(action)
+                        rew, obs, first = self.env.observe()
+                        
+                        obs_tensor = torch.from_numpy(obs).to(self.cfg["device"])
                         acts_A = self.model_A(obs_tensor)
                         acts_B = self.model_B(obs_tensor)
-
+                        
                         # Stack activations
                         acts = torch.stack([acts_A, acts_B], dim=0)
 
