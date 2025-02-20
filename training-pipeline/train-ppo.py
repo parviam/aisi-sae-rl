@@ -7,6 +7,9 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.callbacks import CheckpointCallback
 
+from impala import ImpalaPolicy
+
+
 def parse_args():
     """
     Parses command-line arguments.
@@ -48,8 +51,9 @@ def train_model(env, iterations_per_weight_update: int, weight_update_per_save: 
     )
 
     model = PPO(
-        "CnnPolicy", 
+        ImpalaPolicy,
         env,
+        learning_rate=2.5e-4,
         n_steps = iterations_per_weight_update, # timesteps before updating weights
         verbose=1)
 
@@ -61,7 +65,6 @@ def train_model(env, iterations_per_weight_update: int, weight_update_per_save: 
     )
 
 def evaluation(env, save_folder: str, model_name: str):
-    latest_checkpoint = f"{save_folder}{model_name}_steps.zip"
     checkpoint_files = [f for f in os.listdir(save_folder) if f.startswith(model_name) and f.endswith("_steps.zip")]
 
     mean_rewards = []
@@ -104,7 +107,7 @@ if __name__ == "__main__":
     args = parse_args()
 
     # Create the environment
-    env = gym.make(args.gym_env)
+    env = gym.make(args.gym_env, start_level=0, num_levels=50_000)
 
     train_model(env, args.iterations_per_weight_update, args.weight_update_per_save, args.save_folder, args.model_name, args.total_timesteps_to_run)
 
