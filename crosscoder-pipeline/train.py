@@ -1,13 +1,19 @@
 import argparse
 import json
+import sys
 
 import torch
 import yaml
 from datasets import load_dataset
+import gym
 from huggingface_hub import login
+from stable_baselines3 import PPO
 from transformer_lens import HookedTransformer
 
 from trainer import Trainer
+
+sys.path.insert(1, '../training-pipeline')
+from impala import ImpalaPolicy
 
 
 def arg_parse_update_cfg(default_cfg):
@@ -38,42 +44,27 @@ def arg_parse_update_cfg(default_cfg):
     return cfg
 
 
-def load_pile_lmsys_mixed_tokens():
-    try:
-        print("Loading data from disk")
-        all_tokens = torch.load(
-            "workspace/data/pile-lmsys-mix-1m-tokenized-gemma-2.pt")
-    except Exception:
-        print("Data is not cached. Loading data from HF")
-        data = load_dataset(
-            "ckkissane/pile-lmsys-mix-1m-tokenized-gemma-2",
-            split="train",
-            cache_dir="workspace/cache/",
-        )
-        data.save_to_disk(
-            "workspace/data/pile-lmsys-mix-1m-tokenized-gemma-2.hf")
-        data.set_format(type="torch", columns=["input_ids"])
-        all_tokens = data["input_ids"]
-        torch.save(all_tokens,
-                   "workspace/data/pile-lmsys-mix-1m-tokenized-gemma-2.pt")
-        print("Saved tokens to disk")
-    return all_tokens
-
-
 with open("config.yaml", "r") as file:
     default_cfg = yaml.safe_load(file)
 
 login(token=default_cfg["hf_token"])
-base_model = HookedTransformer.from_pretrained(
-    "gemma-2-2b",
-    device=default_cfg["device"],
-)
-chat_model = HookedTransformer.from_pretrained(
-    "gemma-2-2b-it",
-    device=default_cfg["device"],
-)
-default_cfg["d_in"] = base_model.cfg.d_model
-all_tokens = load_pile_lmsys_mixed_tokens()
+env = gym.make(f"procgen:procgen-coinrun-v0", render_mode="rgb_array")
+model_A = PPO(
+        ImpalaPolicy,
+        env,
+        learning_rate=default_cfg["lr"],
+        n_steps = default_cfg["iterations_per_weight_update"], # timesteps before updating weights
+        verbose=1,
+        device=default_cfg["device"])
+model_B = PPO(
+        ImpalaPolicy,
+        env,
+        learning_rate=default_cfg["lr"],
+        n_steps = default_cfg["iterations_per_weight_update"], # timesteps before updating weights
+        verbose=1,
+        device=default_cfg["device"])
+
+# default_cfg["d_in"] = model_A.cfg.d_model
 cfg = arg_parse_update_cfg(default_cfg)
-trainer = Trainer(cfg, base_model, chat_model, all_tokens)
+trainer = Trainer(cfg, model_A, model_B)
 trainer.train()
