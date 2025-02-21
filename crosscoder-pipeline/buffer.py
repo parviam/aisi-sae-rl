@@ -1,4 +1,4 @@
-import gym
+import gymnasium as gym
 import torch
 import tqdm
 import numpy as np
@@ -8,7 +8,6 @@ import einops
 import time
 import os
 # from procgen import ProcgenGym3Env
-# import gym3 # For gym3 version of coinrun
 
 
 class Buffer:

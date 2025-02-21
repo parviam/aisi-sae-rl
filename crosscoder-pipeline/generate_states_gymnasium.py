@@ -1,11 +1,12 @@
-import gym
+import gymnasium as gym
 import numpy as np
 from PIL import Image as Image
-import time
 import os
+import time
 import torch
 
-# This version uses gym. Works locally but does not fit into our pipeline.
+
+# This version uses gymnasium (does NOT work with procgen as far as I can tell)
 ######################## Simple implementation - Just saves n states from coinrun ##########################
 
 def save_observation(observation, step, out_folder):
@@ -39,15 +40,16 @@ def get_states(env, policy, num_states, out_folder):
     """
     os.makedirs(out_folder, exist_ok=True)
 
+    # Version 1: Gym format
     observation = env.reset()
 
     states_collected = 0
     while states_collected < num_states:
         states_collected += 1
         action = policy(observation)
-        observation, reward, done, info = env.step(action)
+        observation, reward, terminated, truncated, info = env.step(action)
         save_observation(observation, states_collected, out_folder)
-        if done:
+        if terminated:
             observation = env.reset()
 
     env.close()
@@ -161,17 +163,7 @@ def get_diverse_states(env, policy, num_states, out_folder, min_feature_counts=N
 if __name__ == '__main__':
 
     env = gym.make("procgen-coinrun-v0")
-
     policy = lambda obs: env.action_space.sample()
 
     # Simple version that does not include feature quotas
-    get_states(env, policy, num_states=100, out_folder="./env_states")
-
-    # More complex version that sets quotas for each feature type (not fully implemented yet)
-    min_counts = {
-        'coin': 150,
-        'enemy': 100,
-        'box': 100,
-        'lava': 50
-    }
-    #feature_counts = get_diverse_states(env, policy, num_states=500, out_folder="./diverse_states", min_feature_counts=min_counts)
+    get_states(env, policy, num_states=5, out_folder="./env_states")
