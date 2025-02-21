@@ -190,7 +190,7 @@ if __name__ == '__main__':
     policy = lambda obs: env.action_space.sample()
 
     # Simple version that does not include feature quotas
-    get_states(env, policy, num_states=100, out_folder="./saved_states")
+    get_states(env, policy, num_states=100, out_folder="./env_states")
 
     # More complex version that sets quotas for each feature type (not fully implemented yet)
     min_counts = {

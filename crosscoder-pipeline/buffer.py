@@ -28,7 +28,7 @@ class Buffer:
     def __init__(self, cfg, model_A, model_B, all_tokens, env_name="procgen:procgen-coinrun-v0",verbose = False):
         self.cfg = cfg
         self.buffer_size = cfg["batch_size"] * cfg["buffer_mult"]
-        self.states_provided = True#cfg["states_provided"]
+        self.states_provided = cfg["states_provided"]
         self.buffer_batches = self.buffer_size // (cfg["seq_len"] - 1)
         self.buffer_size = self.buffer_batches * (cfg["seq_len"] - 1)
         self.model_A = model_A
