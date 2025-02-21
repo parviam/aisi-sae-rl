@@ -49,14 +49,11 @@ def get_states(env, policy, num_states, out_folder):
 
     # Version 1: Gym format
     observation = env.reset()
-    print(type(observation))
 
     states_collected = 0
     while states_collected < num_states:
         states_collected += 1
         action = policy(observation)
-        print(states_collected)
-        print(observation.shape)
         observation, reward, done, info = env.step(8)
         save_observation(observation, states_collected, out_folder)
         if done:
@@ -193,7 +190,7 @@ if __name__ == '__main__':
     policy = lambda obs: env.action_space.sample()
 
     # Simple version that does not include feature quotas
-    get_states(env, policy, num_states=5, out_folder="./saved_states")
+    get_states(env, policy, num_states=100, out_folder="./saved_states")
 
     # More complex version that sets quotas for each feature type (not fully implemented yet)
     min_counts = {

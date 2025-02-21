@@ -2,6 +2,8 @@ import gym
 import torch
 import tqdm
 import numpy as np
+from PIL import Image
+import glob
 import einops
 import time
 import os
@@ -10,11 +12,23 @@ import os
 
 
 class Buffer:
-    """Modified Buffer class to store game states from procgen environments"""
+    """Modified Buffer class to store game states from procgen environments.
+
+    Environment states can be preloaded to /env_states/ and loaded here if self.states_provided == True, or generated ad hoc in the refresh() method if states_provided == False.
+
+    State and action pairs are also logged to an NPZ file which contains a dictionary of lists:
+        state_actions = {
+                         states (list of arrays)
+                         activations_A (list of arrays)
+                         activations_B (list of arrays)
+                         }
+
+    """
 
     def __init__(self, cfg, model_A, model_B, all_tokens, env_name="procgen:procgen-coinrun-v0",verbose = False):
         self.cfg = cfg
         self.buffer_size = cfg["batch_size"] * cfg["buffer_mult"]
+        self.states_provided = True#cfg["states_provided"]
         self.buffer_batches = self.buffer_size // (cfg["seq_len"] - 1)
         self.buffer_size = self.buffer_batches * (cfg["seq_len"] - 1)
         self.model_A = model_A
@@ -51,6 +65,13 @@ class Buffer:
             device=cfg["device"], dtype=torch.float32,
         )
 
+        if self.states_provided:
+            self.state_files = glob.glob(os.path.join("env_states", "*.png"))
+            if len(self.state_files) == 0:
+                raise ValueError("No PNG files found in env_states folder")
+            if self.verbose:
+                print(f"Found {len(self.state_files)} state files in env_states folder")
+
         self.refresh()
 
     def save_state_activation_pairs(self, filename, accumulate=True):
@@ -81,6 +102,21 @@ class Buffer:
             if self.verbose: print(f"Saved {len(new_data['states'])} samples to new file")
 
         np.savez_compressed(filename, **save_dict)
+
+
+    def load_state_from_png(self, filepath):
+        """Load and process a state from a PNG file
+        Args:
+            filepath: Path to the PNG file
+        Returns:
+            numpy array of shape (64, 64, 3)
+        """
+        img = Image.open(filepath)
+        state = np.array(img, dtype=np.uint8) # Convert back to numpy array
+
+        if state.shape != (64, 64, 3):
+            raise ValueError(f"Invalid state shape: {state.shape}, expected (64, 64, 3)")
+        return state
 
 
     def estimate_norm_scaling_factor(self, batch_size, model, n_batches_for_norm_estimate: int = 100):
@@ -114,13 +150,19 @@ class Buffer:
             self.first = False
 
             states_collected = 0
-            observation = self.env.reset()
 
             for _ in tqdm.trange(num_states):
                 with torch.no_grad():
-                    # Sample observations from env
-                    action = self.policy(observation)
-                    observation, reward, done, info = self.env.step(action)
+                    if self.states_provided:
+                        state_file = self.state_files[0]
+                        observation = self.load_state_from_png(state_file)
+
+                    else: # Sample observations from env
+                        if states_collected == 0:
+                            observation = self.env.reset()
+                        action = self.policy(observation)
+                        observation, reward, done, info = self.env.step(action)
+
                     obs_tensor = torch.from_numpy(observation).to(self.cfg["device"])
 
                     # Process the observation through both models
@@ -137,7 +179,8 @@ class Buffer:
                     acts = torch.stack([acts_A, acts_B], dim=0)
 
                     # Store in buffer
-                    self.buffer[states_collected] = acts
+                    self.buffer[self.pointer: self.pointer + acts.shape[0]] = acts
+                    self.pointer += acts.shape[0]
                     states_collected += 1
 
         # Shuffle buffer
@@ -158,7 +201,8 @@ class Buffer:
             out = out * self.normalisation_factor[None, :, None]
         return out
 
-######
+
+####### Content below is for unit testing #######
 
 class MockModel:
     """Mock model class for testing"""
