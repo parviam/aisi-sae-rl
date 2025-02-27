@@ -7,7 +7,8 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.callbacks import CheckpointCallback
 
-from impala import ImpalaPolicy
+from impala import ImpalaActorCriticPolicy
+from wrapped_procgen import make_wrapped_procgen_env
 
 
 def parse_args():
@@ -39,6 +40,10 @@ def parse_args():
     parser.add_argument("--iterations_per_weight_update", type=int,
                         help="Number of iterations before updating weights.")
 
+    # SAVE SETTINGS
+    parser.add_argument("--procgen_num_levels", type=int,
+                        help="Number of Procgen levels to run Impala algorithm.")
+
     args = parser.parse_args()
     return args
 
@@ -51,11 +56,19 @@ def train_model(env, iterations_per_weight_update: int, weight_update_per_save: 
     )
 
     model = PPO(
-        ImpalaPolicy,
+        ImpalaActorCriticPolicy,
         env,
-        learning_rate=2.5e-4,
         n_steps = iterations_per_weight_update, # timesteps before updating weights
-        verbose=1)
+        learning_rate=5e-4,  # 5 × 10^−4
+        batch_size=32,  # n_steps / minibatches (256 / 8)
+        n_epochs=3,  # Epochs per rollout
+        gamma=0.999,  # Discount factor
+        gae_lambda=0.95,  # GAE parameter
+        ent_coef=0.01,  # Entropy bonus
+        clip_range=0.2,  # PPO clipping range
+        normalize_advantage=True,  # Reward normalization
+        device="cuda",
+        verbose=1,)
 
     # Train the PPO model with the callback
     model.learn(
@@ -107,11 +120,12 @@ if __name__ == "__main__":
     args = parse_args()
 
     # Create the environment
-    env = gym.make(args.gym_env, start_level=0, num_levels=50_000)
+    # env = gym.make(args.gym_env, start_level=0, num_levels=1)
+    env = make_wrapped_procgen_env(args.gym_env, starting_level=0, num_levels=args.procgen_num_levels)
 
     train_model(env, args.iterations_per_weight_update, args.weight_update_per_save, args.save_folder, args.model_name, args.total_timesteps_to_run)
 
-    evaluation(env, args.save_folder, args.model_name)
+    # evaluation(env, args.save_folder, args.model_name)
 
 
     
