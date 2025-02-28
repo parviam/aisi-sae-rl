@@ -16,6 +16,24 @@ sys.path.insert(1, '../training-pipeline')
 from impala import ImpalaPolicy
 
 
+class ModelWrapper(PPO):
+    """Model wrapper to add expected functionality"""
+    
+    def __init__(self, model, d_model=2048):
+        self.cfg = type('Config', (), {'d_model': d_model})()
+        self.model = model
+
+    def __call__(self, x):
+        # Return a constant tensor with the same batch size as
+        action, _states = self.model.predict(x.cpu().numpy())
+        return self.model.policy.cnn.activations['act']
+    
+    def run_with_cache(self, states, names_filter=None, return_type=None):
+        batch_size = len(states)
+        cache = {names_filter: torch.ones(self.cfg.d_model, device=states.device)}
+        return None, cache
+    
+
 def arg_parse_update_cfg(default_cfg):
     """
     Helper function to take in a dictionary of arguments,
@@ -56,6 +74,7 @@ model_A = PPO(
         n_steps = default_cfg["iterations_per_weight_update"], # timesteps before updating weights
         verbose=1,
         device=default_cfg["device"])
+model_A = ModelWrapper(model_A)
 model_B = PPO(
         ImpalaPolicy,
         env,
@@ -63,6 +82,7 @@ model_B = PPO(
         n_steps = default_cfg["iterations_per_weight_update"], # timesteps before updating weights
         verbose=1,
         device=default_cfg["device"])
+model_B = ModelWrapper(model_B)
 
 # default_cfg["d_in"] = model_A.cfg.d_model
 cfg = arg_parse_update_cfg(default_cfg)
