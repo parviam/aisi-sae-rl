@@ -65,8 +65,7 @@ class CrossCoder(nn.Module):
         x_enc = einops.einsum(
             x,
             self.W_enc,
-            "batch n_models d_model, n_models d_model d_hidden -> " /
-            + "batch d_hidden",
+            "batch n_models d_model, n_models d_model d_hidden -> batch d_hidden",
         )
         if apply_relu:
             acts = F.relu(x_enc + self.b_enc)
@@ -79,8 +78,7 @@ class CrossCoder(nn.Module):
         acts_dec = einops.einsum(
             acts,
             self.W_dec,
-            "batch d_hidden, d_hidden n_models d_model ->" /
-            + " batch n_models d_model",
+            "batch d_hidden, d_hidden n_models d_model -> batch n_models d_model",
         )
         return acts_dec + self.b_dec
 
