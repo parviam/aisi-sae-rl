@@ -13,6 +13,7 @@ class Config:
     USE_BATCH_NORM = int(os.getenv("USE_BATCH_NORM"))
     DROPOUT = float(os.getenv("DROPOUT"))
 
+
 class ImpalaBlock(nn.Module):
     def __init__(self, in_channels, use_batch_norm=True):
         super().__init__()
@@ -49,6 +50,7 @@ class ImpalaCNN(nn.Module):
     def __init__(self, num_channels=3, depths=[16, 32, 32]):
         super().__init__()
         self.use_batch_norm = Config.USE_BATCH_NORM == 1
+        self.activations = {}
         
         layers = []
         in_channels = num_channels
@@ -63,7 +65,11 @@ class ImpalaCNN(nn.Module):
             in_channels = depth
             
         self.conv_layers = nn.Sequential(*layers)
+        self.conv_layers[-1].register_forward_hook(self._hook_func)
         self.fc = nn.Linear(self._get_conv_output_size(num_channels), 256)
+        
+    def _hook_func(self, m , inp ,op):
+        self.activations['act'] = torch.flatten(op).detach()
         
     def _get_conv_output_size(self, channels):
         x = torch.zeros(1, channels, 64, 64)
