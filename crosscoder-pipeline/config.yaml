@@ -2,7 +2,8 @@
 seed: 49
 batch_size: 4096
 buffer_mult: 128
-lr: 0.00005
+lr: 0.00025
+iterations_per_weight_update: 256
 num_tokens: 400_000_000
 l1_coeff: 2
 beta1: 0.9
@@ -14,9 +15,11 @@ model_name: gemma-2-2b
 site: resid_pre
 device: cuda:0
 model_batch_size: 4
+d_in: 2048
 log_every: 100
 save_every: 30000
 dec_init_norm: 0.08
+states_provided: False
 hook_point: blocks.14.hook_resid_pre
 hf_token: YOUR_HUGGINGFACE_TOKEN
 wandb_project: YOUR_WANDB_PROJECT
