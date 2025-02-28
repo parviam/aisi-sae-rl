@@ -1,4 +1,4 @@
-import gymnasium as gym
+import gym
 import torch
 import tqdm
 import numpy as np
@@ -24,7 +24,7 @@ class Buffer:
 
     """
 
-    def __init__(self, cfg, model_A, model_B, all_tokens, env_name="procgen:procgen-coinrun-v0",verbose = False):
+    def __init__(self, cfg, model_A, model_B, env_name="procgen:procgen-coinrun-v0",verbose = False):
         self.cfg = cfg
         self.buffer_size = cfg["batch_size"] * cfg["buffer_mult"]
         self.states_provided = cfg["states_provided"]
@@ -35,7 +35,6 @@ class Buffer:
         self.pointer = 0
         self.first = True
         self.normalize = True
-        self.all_tokens = all_tokens
         self.verbose = verbose
 
         # Initialize buffer to store game states
@@ -121,9 +120,9 @@ class Buffer:
     def estimate_norm_scaling_factor(self, batch_size, model, n_batches_for_norm_estimate: int = 100):
         norms_per_batch = []
         for i in tqdm.tqdm(range(n_batches_for_norm_estimate), desc="Estimating norm scaling factor"):
-            tokens = self.all_tokens[i * batch_size: (i + 1) * batch_size]
+            states = self.buffer[i * batch_size: (i + 1) * batch_size]
             _, cache = model.run_with_cache(
-                tokens,
+                states,
                 names_filter=self.cfg["hook_point"],
                 return_type=None,
             )
@@ -163,6 +162,7 @@ class Buffer:
                         observation, reward, done, info = self.env.step(action)
 
                     obs_tensor = torch.from_numpy(observation).to(self.cfg["device"])
+                    obs_tensor = torch.reshape(obs_tensor, (3,64,64))
 
                     # Process the observation through both models
                     acts_A = self.model_A(obs_tensor)
@@ -213,9 +213,9 @@ class MockModel:
         # Return a constant tensor with the same batch size as input
         return torch.ones(self.cfg.d_model, device=x.device, dtype=torch.float32)
 
-    def run_with_cache(self, tokens, names_filter=None, return_type=None):
-        batch_size = len(tokens)
-        cache = {names_filter: torch.ones(self.cfg.d_model, device=tokens.device)}
+    def run_with_cache(self, states, names_filter=None, return_type=None):
+        batch_size = len(states)
+        cache = {names_filter: torch.ones(self.cfg.d_model, device=states.device)}
         return None, cache
 
 
@@ -226,17 +226,16 @@ def main(): # For testing
         "seq_len": 9,
         "device": "cuda:0" if torch.cuda.is_available() else "cpu",
         "model_batch_size": 16,
-        "hook_point": "hook_point"
+        "hook_point": "hook_point",
+        "states_provided": False
     }
 
     model_A = MockModel()
     model_B = MockModel()
 
-    # Create mock tokens
-    all_tokens = torch.randint(0, 100, (1000,))
 
     try:
-        buffer = Buffer(test_cfg, model_A, model_B, all_tokens)
+        buffer = Buffer(test_cfg, model_A, model_B)
 
         batch = buffer.next()
         print("\nTest Results:")
