@@ -1,0 +1,1 @@
+salloc -A gts-adelarue3 -N1 --mem-per-gpu=12G -qinferno -t5:00:00 --gres=gpu:V100:1

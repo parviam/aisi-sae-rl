@@ -40,3 +40,46 @@ coin_non_env = GymV21CompatibilityV0("procgen:procgen-coinrun-v0", make_kwargs={
 ```
 
 This was successful. Saved in Rohan's adelarue3 folder. Around ~100,000 the model overfitted and was consistently scoring 9.5+ / 10 on the coinrun environment. Note, this is only for 1 level for the purposes of testing whether the training loop works. The next will assess how well the model is generalizing. 
+
+# Timing
+
+## On CPU
+Took 74 minutes ~150,000 iterations. Avg speed is 2000 iterations / minute.
+
+## On GPU (Nvidia V100 16GB)
+
+200,000 iterations in 8 minutes. Avg speed is 25,000 iterations / minute.
+
+Easy Training (25M iterations): ~1000 compute hours
+
+# Experiment 1: 10 Level Convergence
+
+## First Failure
+
+Found that the model after 12.9M timesteps would keep outputting action 6. This is a action that according to documentation does nothing. 
+/storage/home/hcoda1/4/rmehta98/p-adelarue3-0/[[TODO]]
+
+## Second Attempt
+
+Added tensorboardX support to see if a trend in rewards can be identified. 
+
+Located /storage/home/hcoda1/4/rmehta98/p-adelarue3-0/impala_10level_v2
+python train-ppo.py \
+    --gym_env procgen:procgen-coinrun-v0 \
+    --save_folder ~/p-adelarue3-0/impala_10level_v2/ \
+    --model_name v20250306_1804 \
+    --total_timesteps_to_run 25000000 \
+    --weight_update_per_save 200 \
+    --iterations_per_weight_update 256 \
+    --procgen_num_levels 10 \
+
+## Experiment 3: 1 level
+Located /storage/home/hcoda1/4/rmehta98/p-adelarue3-0/impala_1level
+python train-ppo.py \
+    --gym_env procgen:procgen-coinrun-v0 \
+    --save_folder ~/p-adelarue3-0/impala_1level/ \
+    --model_name v20250306_1822 \
+    --total_timesteps_to_run 25000000 \
+    --weight_update_per_save 200 \
+    --iterations_per_weight_update 256 \
+    --procgen_num_levels 1 \
