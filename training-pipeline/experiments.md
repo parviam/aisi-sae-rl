@@ -74,12 +74,14 @@ python train-ppo.py \
     --procgen_num_levels 10 \
 
 ## Experiment 3: 1 level
-Located /storage/home/hcoda1/4/rmehta98/p-adelarue3-0/impala_1level
-python train-ppo.py \
+Located /storage/home/hcoda1/4/rmehta98/p-adelarue3-0/naturecnn_1level
+python train-ppo_naturecnn.py \
     --gym_env procgen:procgen-coinrun-v0 \
-    --save_folder ~/p-adelarue3-0/impala_1level/ \
-    --model_name v20250306_1822 \
+    --save_folder ~/p-adelarue3-0/naturecnn_1level \
+    --model_name v20250306_2227 \
     --total_timesteps_to_run 25000000 \
     --weight_update_per_save 200 \
     --iterations_per_weight_update 256 \
-    --procgen_num_levels 1 \
+    --procgen_num_levels 1
+
+## Experiment 4: NatureCNN on 1 Level

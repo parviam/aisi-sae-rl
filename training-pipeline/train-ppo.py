@@ -87,8 +87,8 @@ def train_model(env, iterations_per_weight_update: int, weight_update_per_save: 
             n_epochs=3,  # Epochs per rollout
             gamma=0.999,  # Discount factor
             gae_lambda=0.95,  # GAE parameter
-            ent_coef=0.01,  # Entropy bonus
-            clip_range=0.2,  # PPO clipping range
+            ent_coef=0.2,  # Entropy bonus (default 0.03)
+            clip_range=0.4,  # PPO clipping range (default 0.2)
             normalize_advantage=True,  # Reward normalization
             device="cuda",
             tensorboard_log=tensorboard_log_dir,
@@ -98,7 +98,8 @@ def train_model(env, iterations_per_weight_update: int, weight_update_per_save: 
     model.learn(
         total_timesteps=total_timesteps_to_run,
         callback=checkpoint_callback,
-        log_interval=10,
+        log_interval=100,
+        tb_log_name=model_name,
         reset_num_timesteps=False
     )
 
@@ -148,8 +149,8 @@ if __name__ == "__main__":
 
     # Create the environment
     # env = gym.make(args.gym_env, start_level=0, num_levels=1)
+    print(f"Procgen Levels: {args.procgen_num_levels}")
     env = make_wrapped_procgen_env(args.gym_env, starting_level=0, num_levels=args.procgen_num_levels)
-
     train_model(env, args.iterations_per_weight_update, 
         args.weight_update_per_save, args.save_folder, 
         args.model_name, args.total_timesteps_to_run,

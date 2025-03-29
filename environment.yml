@@ -1,13 +1,10 @@
-name: rl_env
+name: rl_env2
 channels:
   - nvidia
   - conda-forge
   - defaults
 dependencies:
   - python=3.9
-  - pytorch
-  - torchvision
-  - torchaudio
   - cudatoolkit=11.8
   - matplotlib
   - pandas
@@ -19,3 +16,6 @@ dependencies:
       - procgen
       - pygame
       - python-dotenv
+      # - pytorch
+      # - torchvision
+      # - torchaudio
