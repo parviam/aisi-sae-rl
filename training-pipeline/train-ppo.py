@@ -7,6 +7,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.callbacks import CheckpointCallback
 from tensorboardX import SummaryWriter
+from stable_baselines3.common.vec_env import VecNormalize
 
 from impala import ImpalaActorCriticPolicy
 from wrapped_procgen import make_wrapped_procgen_env
@@ -76,8 +77,9 @@ def train_model(env, iterations_per_weight_update: int, weight_update_per_save: 
         last_checkpoint = os.path.join(save_folder, checkpoint_without_zip)
         model = PPO.load(last_checkpoint, env=env, device="cuda", tensorboard_log=tensorboard_log_dir)
         model.num_timesteps = highest_timestep
-        print(f"Continuing training from '{last_checkpoint}' for {total_timesteps_to_run - highest_timestep} more steps")
+        print(f">> Continuing training from '{last_checkpoint}' for {total_timesteps_to_run - highest_timestep} more steps")
     else:
+        print(">> Initializing from scratch")
         model = PPO(
             ImpalaActorCriticPolicy,
             env,
@@ -87,8 +89,8 @@ def train_model(env, iterations_per_weight_update: int, weight_update_per_save: 
             n_epochs=3,  # Epochs per rollout
             gamma=0.999,  # Discount factor
             gae_lambda=0.95,  # GAE parameter
-            ent_coef=0.2,  # Entropy bonus (default 0.03)
-            clip_range=0.4,  # PPO clipping range (default 0.2)
+            ent_coef=0.01,  # Entropy bonus (default 0.03)
+            clip_range=0.2,  # PPO clipping range (default 0.2)
             normalize_advantage=True,  # Reward normalization
             device="cuda",
             tensorboard_log=tensorboard_log_dir,
@@ -151,6 +153,7 @@ if __name__ == "__main__":
     # env = gym.make(args.gym_env, start_level=0, num_levels=1)
     print(f"Procgen Levels: {args.procgen_num_levels}")
     env = make_wrapped_procgen_env(args.gym_env, starting_level=0, num_levels=args.procgen_num_levels)
+    # env = VecNormalize(env, norm_reward=True, norm_obs=False, gamma=0.999)
     train_model(env, args.iterations_per_weight_update, 
         args.weight_update_per_save, args.save_folder, 
         args.model_name, args.total_timesteps_to_run,

@@ -16,8 +16,8 @@ class Config:
 class ImpalaBlock(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
-        self.conv1 = nn.Conv2d(in_channels, in_channels, 3, padding="same")
-        self.conv2 = nn.Conv2d(in_channels, in_channels, 3, padding="same")
+        self.conv1 = nn.Conv2d(in_channels, in_channels, 3, padding=1)
+        self.conv2 = nn.Conv2d(in_channels, in_channels, 3, padding=1)
 
     def forward(self, x):
         out = F.relu(x)
@@ -31,14 +31,15 @@ class ImpalaBlock(nn.Module):
 class ImpalaCNN(nn.Module):
     def __init__(self, num_channels=3, features_dim=256, depths=[16, 32, 32]):
         super().__init__()
+        print("initializing model")
         
         layers = []
         in_channels = num_channels
         
         for depth in depths:
             layers.extend([
-                nn.Conv2d(in_channels, depth, 3, padding="same"),
-                nn.MaxPool2d(3, stride=2, padding="same"),
+                nn.Conv2d(in_channels, depth, 3, padding=1),
+                nn.MaxPool2d(3, stride=2, padding=1),
                 ImpalaBlock(depth),
                 ImpalaBlock(depth)
             ])
@@ -49,16 +50,18 @@ class ImpalaCNN(nn.Module):
         self.features_dim = features_dim
         
     def _get_conv_output_size(self, channels):
-        x = torch.zeros(1, channels, 64, 64)
-        x = self.conv_layers(x)
-        return int(np.prod(x.shape[1:]))
+        with torch.no_grad():  # Prevents computation graph tracking
+
+            x = torch.zeros(1, channels, 64, 64)
+            x = self.conv_layers(x)
+            return int(np.prod(x.shape[1:]))
         
     def forward(self, images):
         # note - below line not needed when using "normalize_images" in
         # ActorCriticPolicy params
         # x = images.float() / 255.0
-        x = self.conv_layers(x)
-        x = torch.flatten(x)
+        x = self.conv_layers(images)
+        x = torch.flatten(x, start_dim=1)
         x = F.relu(x)
         x = F.relu(self.fc(x))
         return x
@@ -80,5 +83,5 @@ class ImpalaActorCriticPolicy(ActorCriticPolicy):
         self.ob_space = ob_space
         self.ac_space = ac_space
 
-    def make_feature_extractor(self):
+    def make_features_extractor(self):
         return ImpalaCNN(num_channels=3, features_dim=256)
