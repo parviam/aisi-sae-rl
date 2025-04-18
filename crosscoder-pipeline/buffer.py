@@ -1,5 +1,6 @@
 import gym
-import torch
+import tensorflow as tf
+tf.logging.set_verbosity(tf.logging.ERROR)
 import tqdm
 import numpy as np
 from PIL import Image
@@ -7,6 +8,14 @@ import glob
 import einops
 import time
 import os
+
+from procgen import ProcgenEnv
+from baselines.common.vec_env import (
+    VecExtractDictObs,
+    VecMonitor,
+    VecFrameStack,
+    VecNormalize
+)
 # from procgen import ProcgenGym3Env
 
 
@@ -24,7 +33,7 @@ class Buffer:
 
     """
 
-    def __init__(self, cfg, model_A, model_B, env_name="procgen:procgen-coinrun-v0",verbose = False):
+    def __init__(self, cfg, model_A, model_B, env_name="coinrun",verbose = False):
         self.cfg = cfg
         self.buffer_size = cfg["batch_size"] * cfg["buffer_mult"]
         self.states_provided = cfg["states_provided"]
@@ -38,14 +47,21 @@ class Buffer:
         self.verbose = verbose
 
         # Initialize buffer to store game states
-        self.buffer = torch.zeros(
-            (self.buffer_size, 2, model_A.cfg.d_model), # hardcoding 2 for model diffing
-            dtype=torch.bfloat16,
-            requires_grad=False,
-        ).to(cfg["device"])
+        self.buffer = tf.zeros(
+            (self.buffer_size, 2, cfg['d_model']), # hardcoding 2 for model diffing
+            dtype=tf.bfloat16,
+        )
 
         # Create environment
-        self.env = gym.make(env_name)
+        venv = ProcgenEnv(num_envs=1,
+                      env_name=env_name,
+                      num_levels=1000,
+                      start_level=0,
+                      distribution_mode='hard')
+        venv = VecExtractDictObs(venv, "rgb")
+        venv = VecMonitor(venv=venv, filename=None, keep_buf=100)
+        self.env = VecNormalize(venv=venv, ob=False)
+
         self.policy = lambda observation: self.env.action_space.sample()  # Random policy
 
         self.state_activation_pairs = {
@@ -53,15 +69,6 @@ class Buffer:
             'activations_A': [],  # Will store activations from model A
             'activations_B': []  # Will store activations from model B
         }
-
-        # Initialize normalization factors
-        estimated_norm_scaling_factor_A = self.estimate_norm_scaling_factor(cfg["model_batch_size"], model_A)
-        estimated_norm_scaling_factor_B = self.estimate_norm_scaling_factor(cfg["model_batch_size"], model_B)
-
-        self.normalisation_factor = torch.tensor(
-            [estimated_norm_scaling_factor_A, estimated_norm_scaling_factor_B,],
-            device=cfg["device"], dtype=torch.float32,
-        )
 
         if self.states_provided:
             self.state_files = glob.glob(os.path.join("env_states", "*.png"))
@@ -71,6 +78,15 @@ class Buffer:
                 print(f"Found {len(self.state_files)} state files in env_states folder")
 
         self.refresh()
+        
+        # Initialize normalization factors
+        estimated_norm_scaling_factor_A = self.estimate_norm_scaling_factor(cfg["model_batch_size"], model_A)
+        estimated_norm_scaling_factor_B = self.estimate_norm_scaling_factor(cfg["model_batch_size"], model_B)
+
+        self.normalisation_factor = tf.constant(
+            [estimated_norm_scaling_factor_A, estimated_norm_scaling_factor_B,],
+            dtype=tf.float32,
+        )
 
     def save_state_activation_pairs(self, filename, accumulate=True):
         """Save the collected state-activation pairs to a file
@@ -120,77 +136,71 @@ class Buffer:
     def estimate_norm_scaling_factor(self, batch_size, model, n_batches_for_norm_estimate: int = 100):
         norms_per_batch = []
         for i in tqdm.tqdm(range(n_batches_for_norm_estimate), desc="Estimating norm scaling factor"):
-            states = self.buffer[i * batch_size: (i + 1) * batch_size]
-            _, cache = model.run_with_cache(
-                states,
-                names_filter=self.cfg["hook_point"],
-                return_type=None,
-            )
-            acts = cache[self.cfg["hook_point"]]
+            states = self.state_activation_pairs['states'][i * batch_size: (i + 1) * batch_size]
+            acts = model(states)
             norms_per_batch.append(acts.norm(dim=-1).mean().item())
         mean_norm = np.mean(norms_per_batch)
-        scaling_factor = np.sqrt(model.cfg.d_model) / mean_norm
+        scaling_factor = np.sqrt(self.cfg['d_model']) / mean_norm
         return scaling_factor
 
 
-    @torch.no_grad()
     def refresh(self):
         """Collect new diverse game states to refresh the buffer"""
         self.pointer = 0
         if self.verbose: print("Refreshing the buffer with new game states!")
 
-        #with torch.autocast("cuda", torch.bfloat16):
-        with torch.no_grad():
-            if self.first:
-                num_states = self.buffer_batches
-            else:
-                num_states = self.buffer_batches // 2
-            self.first = False
+        if self.first:
+            num_states = self.buffer_batches
+        else:
+            num_states = self.buffer_batches // 2
+        self.first = False
 
-            states_collected = 0
+        states_collected = 0
 
-            for _ in tqdm.trange(num_states):
-                with torch.no_grad():
-                    if self.states_provided:
-                        state_file = self.state_files[0]
-                        observation = self.load_state_from_png(state_file)
+        for _ in tqdm.trange(num_states):
+            if self.states_provided:
+                state_file = self.state_files[0]
+                observation = self.load_state_from_png(state_file)
 
-                    else: # Sample observations from env
-                        if states_collected == 0:
-                            observation = self.env.reset()
-                        action = self.policy(observation)
-                        observation, reward, done, info = self.env.step(action)
+            else: # Sample observations from env
+                if states_collected == 0:
+                    observation = self.env.reset()
+                action = np.array(self.policy(observation))
+                observation, reward, done, info = self.env.step(action)
 
-                    obs_tensor = torch.from_numpy(observation).to(self.cfg["device"])
-                    obs_tensor = torch.reshape(obs_tensor, (3,64,64))
+            obs_tensor = tf.convert_to_tensor(observation)
+            obs_tensor = tf.reshape(obs_tensor, (1,3,64,64))
 
-                    # Process the observation through both models
-                    acts_A = self.model_A(obs_tensor)
-                    acts_B = self.model_B(obs_tensor)
+            # Process the observation through both models
+            acts_A = self.model_A(obs_tensor)
+            acts_B = self.model_B(obs_tensor)
+            with tf.Session() as sess:
+                acts_A = acts_A.eval(session=sess)
+                acts_B = acts_B.eval(session=sess)
+            import pdb;pdb.set_trace()
 
-                    # Store states and activations for later correlation
-                    self.state_activation_pairs['states'].append(observation.copy())
-                    self.state_activation_pairs['activations_A'].append(acts_A.detach().clone())
-                    self.state_activation_pairs['activations_B'].append(acts_B.detach().clone())
-                    self.save_state_activation_pairs("test_state_acts.npz")
+            # Store states and activations for later correlation
+            self.state_activation_pairs['states'].append(observation.copy())
+            self.state_activation_pairs['activations_A'].append(acts_A)
+            self.state_activation_pairs['activations_B'].append(acts_B)
+            self.save_state_activation_pairs("test_state_acts.npz")
 
-                    # Stack activations
-                    acts = torch.stack([acts_A, acts_B], dim=0)
+            # Stack activations
+            acts = tf.stack([acts_A, acts_B], axis=0)
 
-                    # Store in buffer
-                    self.buffer[self.pointer: self.pointer + acts.shape[0]] = acts
-                    self.pointer += acts.shape[0]
-                    states_collected += 1
+            # Store in buffer
+            self.buffer[self.pointer: self.pointer + acts.shape[0]] = acts
+            self.pointer += acts.shape[0]
+            states_collected += 1
 
         # Shuffle buffer
-        self.buffer = self.buffer[torch.randperm(self.buffer.shape[0]).to(self.cfg["device"])]
+        self.buffer = tf.random.shuffle(self.buffer)
         self.pointer = 0
 
 
-    @torch.no_grad()
     def next(self):
         """Get next batch of states"""
-        out = self.buffer[self.pointer:self.pointer + self.cfg["batch_size"]].float()
+        out = self.buffer[self.pointer:self.pointer + self.cfg["batch_size"]]
         self.pointer += self.cfg["batch_size"]
 
         if self.pointer > self.buffer.shape[0] // 2 - self.cfg["batch_size"]:
@@ -211,11 +221,11 @@ class MockModel:
 
     def __call__(self, x):
         # Return a constant tensor with the same batch size as input
-        return torch.ones(self.cfg.d_model, device=x.device, dtype=torch.float32)
+        return tf.ones(self.cfg['d_model'], dtype=tf.float32)
 
     def run_with_cache(self, states, names_filter=None, return_type=None):
         batch_size = len(states)
-        cache = {names_filter: torch.ones(self.cfg.d_model, device=states.device)}
+        cache = {names_filter: tf.ones(self.cfg['d_model'], dtype=tf.float32)}
         return None, cache
 
 
@@ -224,7 +234,7 @@ def main(): # For testing
         "batch_size": 32,
         "buffer_mult": 4,
         "seq_len": 9,
-        "device": "cuda:0" if torch.cuda.is_available() else "cpu",
+        "device": "cuda:0" if len(tf.config.list_physical_devices('GPU')) > 0 else "cpu",
         "model_batch_size": 16,
         "hook_point": "hook_point",
         "states_provided": False
@@ -240,7 +250,7 @@ def main(): # For testing
         batch = buffer.next()
         print("\nTest Results:")
         print(f"Batch shape: {batch.shape}")
-        print(f"Expected shape: torch.Size([{test_cfg['batch_size']}, 2, {model_A.cfg.d_model}])")
+        print(f"Expected shape: [{test_cfg['batch_size']}, 2, {self.cfg['d_model']}]")
         print(f"Buffer pointer position: {buffer.pointer}")
         print("Buffer test completed successfully!")
 

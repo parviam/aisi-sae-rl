@@ -16,6 +16,7 @@ site: resid_pre
 device: cuda:0
 model_batch_size: 4
 d_in: 2048
+d_model: 2048
 log_every: 100
 save_every: 30000
 dec_init_norm: 0.08

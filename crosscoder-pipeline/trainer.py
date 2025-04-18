@@ -1,11 +1,9 @@
-import torch
 import tqdm
-from torch.nn.utils import clip_grad_norm_
 
 import wandb
 from buffer import Buffer
 from crosscoder import CrossCoder
-
+import tensorflow as tf
 
 class Trainer:
     def __init__(self, cfg, model_A, model_B):
@@ -15,14 +13,19 @@ class Trainer:
         self.crosscoder = CrossCoder(cfg)
         self.buffer = Buffer(cfg, model_A, model_B)
         self.total_steps = cfg["num_tokens"] // cfg["batch_size"]
-        self.optimizer = torch.optim.Adam(
-            self.crosscoder.parameters(),
-            lr=cfg["lr"],
-            betas=(cfg["beta1"], cfg["beta2"]),
+
+
+        # Create the learning rate schedule
+        self.scheduler = tf.train.LearningRateScheduler(
+            lambda global_step: lr_lambda(global_step) * cfg["lr"]
         )
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-            self.optimizer, self.lr_lambda
+        self.lr_placeholder = tf.placeholder(tf.float32, shape=[])
+        self.optimizer = tf.train.AdamOptimizer(
+            learning_rate=self.lr_placeholder,
+            beta1=cfg["beta1"],
+            beta2=cfg["beta2"]
         )
+        
         self.step_counter = 0
         wandb.init(project=cfg["wandb_project"], entity=cfg["wandb_entity"])
 
@@ -42,16 +45,22 @@ class Trainer:
         else:
             return self.cfg["l1_coeff"]
 
-    def step(self):
-        acts = self.buffer.next()
-        losses = self.crosscoder.get_losses(acts)
-        loss = losses.l2_loss + self.get_l1_coeff() * losses.l1_loss
-        loss.backward()
-        clip_grad_norm_(self.crosscoder.parameters(), max_norm=1.0)
-        self.optimizer.step()
-        self.scheduler.step()
-        self.optimizer.zero_grad()
-        self.step_counter += 1
+    def log(self, loss_dict):
+        wandb.log(loss_dict, step=self.step_counter)
+        print(loss_dict)
+
+    def save(self):
+        self.crosscoder.save()
+        
+    
+    def step(inputs):
+        with tf.GradientTape() as tape:
+            losses = self.crosscoder.get_losses(inputs)
+            loss = losses.l2_loss + self.get_l1_coeff() * losses.l1_loss
+        gradients = tape.gradient(loss, self.crosscoder.trainable_variables)
+        clipped_gradients, _ = tf.clip_by_global_norm(gradients, 1.0)
+        optimizer.apply_gradients(zip(clipped_gradients, self.crosscoder.trainable_variables))
+        
         loss_dict = {
             "loss": loss.item(),
             "l2_loss": losses.l2_loss.item(),
@@ -65,21 +74,21 @@ class Trainer:
         }
         return loss_dict
 
-    def log(self, loss_dict):
-        wandb.log(loss_dict, step=self.step_counter)
-        print(loss_dict)
-
-    def save(self):
-        self.crosscoder.save()
-
     def train(self):
         self.step_counter = 0
-        try:
+
+        # Run the training loop
+        with tf.Session() as sess:
+            sess.run(tf.global_variables_initializer())
+        
             for i in tqdm.trange(self.total_steps):
-                loss_dict = self.step()
+                lr = self.scheduler(self.step_counter)
+                acts = self.buffer.next()
+                loss_dict = step(acts)
+                self.step_counter += 1
                 if i % self.cfg["log_every"] == 0:
                     self.log(loss_dict)
                 if (i + 1) % self.cfg["save_every"] == 0:
                     self.save()
-        finally:
+
             self.save()

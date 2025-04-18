@@ -4,124 +4,83 @@ from pathlib import Path
 from typing import NamedTuple, Optional, Union
 
 import einops
-import torch
-import torch.nn.functional as F
-from huggingface_hub import hf_hub_download
-from torch import nn
+import tensorflow as tf
 
 
-DTYPES = {"fp32": torch.float32, "fp16": torch.float16, "bf16": torch.bfloat16}
+DTYPES = {"fp32": tf.float32, "fp16": tf.float16, "bf16": tf.bfloat16}
 SAVE_DIR = Path("crosscoder/checkpoints")
 
 
 class LossOutput(NamedTuple):
-    l2_loss: torch.Tensor
-    l1_loss: torch.Tensor
-    l0_loss: torch.Tensor
-    explained_variance: torch.Tensor
-    explained_variance_A: torch.Tensor
-    explained_variance_B: torch.Tensor
+    l2_loss: tf.Tensor
+    l1_loss: tf.Tensor
+    l0_loss: tf.Tensor
+    explained_variance: tf.Tensor
+    explained_variance_A: tf.Tensor
+    explained_variance_B: tf.Tensor
 
 
-class CrossCoder(nn.Module):
+class CrossCoder(tf.keras.Model):
     def __init__(self, cfg):
         super().__init__()
         self.cfg = cfg
         d_hidden = self.cfg["dict_size"]
         d_in = self.cfg["d_in"]
-        self.dtype = DTYPES[self.cfg["enc_dtype"]]
-        torch.manual_seed(self.cfg["seed"])
+        # self.dtype = DTYPES[self.cfg["enc_dtype"]]
+        tf.set_random_seed(self.cfg["seed"])
         # hardcoding n_models to 2
-        self.W_enc = nn.Parameter(torch.empty(2, d_in, d_hidden,
-                                              dtype=self.dtype))
-        self.W_dec = nn.Parameter(
-            torch.nn.init.normal_(torch.empty(d_hidden, 2, d_in,
-                                              dtype=self.dtype))
-        )
-        self.W_dec = nn.Parameter(
-            torch.nn.init.normal_(torch.empty(d_hidden, 2, d_in,
-                                              dtype=self.dtype))
-        )
+        self.W_enc = tf.Variable(tf.random.normal([2, d_in, d_hidden]))
+        self.W_dec = tf.Variable(tf.random.normal([d_hidden, 2, d_in]))
         # Make norm of W_dec 0.1 for each column, separate per layer
-        self.W_dec.data = (
-            self.W_dec.data
-            / self.W_dec.data.norm(dim=-1, keepdim=True)
-            * self.cfg["dec_init_norm"]
-        )
+        self.W_dec = self.W_dec / tf.norm(self.W_dec, axis=-1, keepdims=True) * self.cfg["dec_init_norm"]
         # Initialise W_enc to be the transpose of W_dec
-        self.W_enc.data = einops.rearrange(
-            self.W_dec.data.clone(),
-            "d_hidden n_models d_model -> n_models d_model d_hidden",
-        )
-        self.b_enc = nn.Parameter(torch.zeros(d_hidden, dtype=self.dtype))
-        self.b_dec = nn.Parameter(torch.zeros((2, d_in), dtype=self.dtype))
+        self.W_enc = tf.transpose(self.W_dec, [2, 1, 0])
+        self.b_enc = tf.Variable(tf.zeros([d_hidden]))
+        self.b_dec = tf.Variable(tf.zeros([2, d_in]))
         self.d_hidden = d_hidden
-        self.to(self.cfg["device"])
-        self.save_dir = None
-        self.save_version = 0
 
     def encode(self, x, apply_relu=True):
         # x: [batch, n_models, d_model]
-        x_enc = einops.einsum(
-            x,
-            self.W_enc,
-            "batch n_models d_model, n_models d_model d_hidden -> batch d_hidden",
-        )
+        x_enc = tf.einsum('ijk,klm->ijm', x, self.W_enc)
         if apply_relu:
-            acts = F.relu(x_enc + self.b_enc)
+            acts = tf.nn.relu(x_enc + self.b_enc)
         else:
             acts = x_enc + self.b_enc
         return acts
 
     def decode(self, acts):
         # acts: [batch, d_hidden]
-        acts_dec = einops.einsum(
-            acts,
-            self.W_dec,
-            "batch d_hidden, d_hidden n_models d_model -> batch n_models d_model",
-        )
+        acts_dec = tf.einsum('ij,jk->ik', acts, self.W_dec)
         return acts_dec + self.b_dec
 
-    def forward(self, x):
+    def call(self, x):
         # x: [batch, n_models, d_model]
         acts = self.encode(x)
         return self.decode(acts)
 
     def get_losses(self, x):
         # x: [batch, n_models, d_model]
-        x = x.to(self.dtype)
+        # x = tf.cast(x, self.dtype)
         acts = self.encode(x)
         # acts: [batch, d_hidden]
         x_reconstruct = self.decode(acts)
-        diff = x_reconstruct.float() - x.float()
-        squared_diff = diff.pow(2)
-        l2_per_batch = einops.reduce(
-            squared_diff, "batch n_models d_model -> batch", "sum"
-        )
-        l2_loss = l2_per_batch.mean()
-        total_variance = einops.reduce(
-            (x - x.mean(0)).pow(2), "batch n_models d_model -> batch", "sum"
-        )
+        diff = x_reconstruct - x
+        squared_diff = diff ** 2
+        l2_per_batch = tf.reduce_sum(squared_diff, axis=[1, 2])
+        l2_loss = tf.reduce_mean(l2_per_batch)
+        total_variance = tf.reduce_sum((x - tf.reduce_mean(x, axis=0)) ** 2, axis=[0, 1, 2])
         explained_variance = 1 - l2_per_batch / total_variance
-        per_token_l2_loss_A = (
-            (x_reconstruct[:, 0, :] - x[:, 0, :]).pow(2).sum(dim=-1).squeeze()
-        )
-        total_variance_A = (x[:, 0, :] - x[:, 0, :].mean(0)
-                            ).pow(2).sum(-1).squeeze()
+        per_token_l2_loss_A = tf.reduce_sum((x_reconstruct[:, 0, :] - x[:, 0, :]) ** 2, axis=-1)
+        total_variance_A = tf.reduce_sum((x[:, 0, :] - tf.reduce_mean(x[:, 0, :])) ** 2, axis=-1)
         explained_variance_A = 1 - per_token_l2_loss_A / total_variance_A
-        per_token_l2_loss_B = (
-            (x_reconstruct[:, 1, :] - x[:, 1, :]).pow(2).sum(dim=-1).squeeze()
-        )
-        total_variance_B = (x[:, 1, :] - x[:, 1, :].mean(0)
-                            ).pow(2).sum(-1).squeeze()
+        per_token_l2_loss_B = tf.reduce_sum((x_reconstruct[:, 1, :] - x[:, 1, :]) ** 2, axis=-1)
+        total_variance_B = tf.reduce_sum((x[:, 1, :] - tf.reduce_mean(x[:, 1, :])) ** 2, axis=-1)
         explained_variance_B = 1 - per_token_l2_loss_B / total_variance_B
-        decoder_norms = self.W_dec.norm(dim=-1)
+        decoder_norms = tf.norm(self.W_dec, axis=-1)
         # decoder_norms: [d_hidden, n_models]
-        total_decoder_norm = einops.reduce(
-            decoder_norms, "d_hidden n_models -> d_hidden", "sum"
-        )
-        l1_loss = (acts * total_decoder_norm[None, :]).sum(-1).mean(0)
-        l0_loss = (acts > 0).float().sum(-1).mean()
+        total_decoder_norm = tf.reduce_sum(decoder_norms, axis=-1)
+        l1_loss = tf.reduce_mean(acts * total_decoder_norm[:, None])
+        l0_loss = tf.reduce_mean(tf.cast(acts > 0, tf.float32))
         return LossOutput(
             l2_loss=l2_loss,
             l1_loss=l1_loss,
@@ -147,66 +106,23 @@ class CrossCoder(nn.Module):
     def save(self):
         if self.save_dir is None:
             self.create_save_dir()
-        weight_path = self.save_dir / f"{self.save_version}.pt"
+        weight_path = self.save_dir / f"{self.save_version}.h5"
         cfg_path = self.save_dir / f"{self.save_version}_cfg.json"
-        torch.save(self.state_dict(), weight_path)
+        self.save_weights(weight_path)
         with open(cfg_path, "w") as f:
             json.dump(self.cfg, f)
 
         print(f"Saved as version {self.save_version} in {self.save_dir}")
         self.save_version += 1
 
-    @classmethod
-    def load_from_hf(
-        cls,
-        repo_id: str = "ckkissane/crosscoder-gemma-2-2b-model-diff",
-        path: str = "blocks.14.hook_resid_pre",
-        device: Optional[Union[str, torch.device]] = None,
-    ) -> "CrossCoder":
-        """
-        Load CrossCoder weights and config from HuggingFace.
-
-        Args:
-            repo_id: HuggingFace repository ID
-            path: Path within the repo to the weights/config
-            model: The transformer model instance needed for initialization
-            device: Device to load the model to (defaults to cfg
-                device if not specified)
-
-        Returns:
-            Initialized CrossCoder instance
-        """
-
-        # Download config and weights
-        config_path = hf_hub_download(repo_id=repo_id,
-                                      filename=f"{path}/cfg.json")
-        weights_path = hf_hub_download(
-            repo_id=repo_id, filename=f"{path}/cc_weights.pt"
-        )
-
-        # Load config
-        with open(config_path, "r") as f:
-            cfg = json.load(f)
-
-        # Override device if specified
-        if device is not None:
-            cfg["device"] = str(device)
-
-        # Initialize CrossCoder with config
-        instance = cls(cfg)
-
-        # Load weights
-        state_dict = torch.load(weights_path, map_location=cfg["device"])
-        instance.load_state_dict(state_dict)
-        return instance
 
     @classmethod
     def load(cls, version_dir, checkpoint_version):
         save_dir = SAVE_DIR / str(version_dir)
         cfg_path = save_dir / f"{str(checkpoint_version)}_cfg.json"
-        weight_path = save_dir / f"{str(checkpoint_version)}.pt"
+        weight_path = save_dir / f"{str(checkpoint_version)}.h5"
         cfg = json.load(open(cfg_path, "r"))
         pprint.pprint(cfg)
         self = cls(cfg=cfg)
-        self.load_state_dict(torch.load(weight_path))
+        self.load_weights(weight_path)
         return self
