@@ -15,41 +15,24 @@ class Config:
 
 
 class ImpalaBlock(nn.Module):
-    def __init__(self, in_channels, use_batch_norm=True):
+    def __init__(self, in_channels):
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels, in_channels, 3, padding=1)
         self.conv2 = nn.Conv2d(in_channels, in_channels, 3, padding=1)
-        self.use_batch_norm = use_batch_norm
-        
-        if use_batch_norm:
-            self.bn1 = nn.BatchNorm2d(in_channels)
-            self.bn2 = nn.BatchNorm2d(in_channels)
-            
-        self.dropout = nn.Dropout2d(p=Config.DROPOUT) if Config.DROPOUT > 0 else None
 
     def forward(self, x):
         out = F.relu(x)
-        
         out = self.conv1(out)
-        if self.dropout:
-            out = self.dropout(out)
-        if self.use_batch_norm:
-            out = self.bn1(out)
-            
         out = F.relu(out)
         
         out = self.conv2(out)
-        if self.dropout:
-            out = self.dropout(out)
-        if self.use_batch_norm:
-            out = self.bn2(out)
             
         return out + x
 
 class ImpalaCNN(nn.Module):
-    def __init__(self, num_channels=3, depths=[16, 32, 32]):
+    def __init__(self, num_channels=3, features_dim=256, depths=[16, 32, 32]):
         super().__init__()
-        self.use_batch_norm = Config.USE_BATCH_NORM == 1
+        print("initializing model")
         self.activations = {}
         
         layers = []
@@ -59,60 +42,52 @@ class ImpalaCNN(nn.Module):
             layers.extend([
                 nn.Conv2d(in_channels, depth, 3, padding=1),
                 nn.MaxPool2d(3, stride=2, padding=1),
-                ImpalaBlock(depth, self.use_batch_norm),
-                ImpalaBlock(depth, self.use_batch_norm)
+                ImpalaBlock(depth),
+                ImpalaBlock(depth)
             ])
             in_channels = depth
             
         self.conv_layers = nn.Sequential(*layers)
         self.conv_layers[-1].register_forward_hook(self._hook_func)
-        self.fc = nn.Linear(self._get_conv_output_size(num_channels), 256)
+        self.fc = nn.Linear(self._get_conv_output_size(num_channels), features_dim)
+        self.features_dim = features_dim
         
     def _hook_func(self, m , inp ,op):
         self.activations['act'] = torch.flatten(op).detach()
         
     def _get_conv_output_size(self, channels):
-        x = torch.zeros(1, channels, 64, 64)
-        x = self.conv_layers(x)
-        return int(np.prod(x.shape[1:]))
+        with torch.no_grad():  # Prevents computation graph tracking
+
+            x = torch.zeros(1, channels, 64, 64)
+            x = self.conv_layers(x)
+            return int(np.prod(x.shape[1:]))
         
     def forward(self, images):
-        x = images.float() / 255.0
-        x = self.conv_layers(x)
+        # note - below line not needed when using "normalize_images" in
+        # ActorCriticPolicy params
+        # x = images.float() / 255.0
+        x = self.conv_layers(images)
         x = torch.flatten(x, start_dim=1)
         x = F.relu(x)
         x = F.relu(self.fc(x))
         return x
 
-class ImpalaPolicy(ActorCriticPolicy):
-    def __init__(self, observation_space, action_space, lr_schedule, *args, **kwargs):
-        
+class ImpalaActorCriticPolicy(ActorCriticPolicy):
+    def __init__(self, ob_space, ac_space, *args, **kwargs):
+        kwargs["ortho_init"] = False
+        kwargs["net_arch"] = dict(pi=[256], vf=[256])
+        kwargs["activation_fn"] = torch.nn.ReLU
+        kwargs["share_features_extractor"] = True
+        kwargs["normalize_images"] = True
+
         super().__init__(
-            observation_space,
-            action_space,
-            lr_schedule,
+            ob_space,
+            ac_space,
             *args,
             **kwargs
         )
-        
-        self.cnn = ImpalaCNN(num_channels=observation_space.shape[0])
-        self.actor = nn.Linear(256, action_space.n)
-        self.critic = nn.Linear(256, 1)
+        self.ob_space = ob_space
+        self.ac_space = ac_space
 
-    def forward(self, obs, deterministic=False):
-        features = self.cnn(obs)
-        action_logits = self.actor(features)
-        value = self.critic(features)
-        
-        action_probs = torch.softmax(action_logits, dim=-1)
-        distribution = torch.distributions.Categorical(action_probs)
-        
-        actions = None
-        if deterministic:
-            actions = torch.argmax(action_probs, dim=-1)
-        else:
-            actions = distribution.sample()
-
-        log_prob = distribution.log_prob(actions)
-        
-        return actions, value, log_prob
+    def make_features_extractor(self):
+        return ImpalaCNN(num_channels=3, features_dim=256)
