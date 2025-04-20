@@ -1,6 +1,12 @@
+import warnings
+warnings.filterwarnings('ignore')
+
 import gym
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
 import tensorflow as tf
-tf.logging.set_verbosity(tf.logging.ERROR)
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 import tqdm
 import numpy as np
 from PIL import Image
@@ -47,9 +53,9 @@ class Buffer:
         self.verbose = verbose
 
         # Initialize buffer to store game states
-        self.buffer = tf.zeros(
+        self.buffer = np.zeros(
             (self.buffer_size, 2, cfg['d_model']), # hardcoding 2 for model diffing
-            dtype=tf.bfloat16,
+            dtype=np.float16,
         )
 
         # Create environment
@@ -97,8 +103,8 @@ class Buffer:
         """
         new_data = {
             'states': np.array(self.state_activation_pairs['states']),
-            'activations_A': np.array([act.cpu().numpy() for act in self.state_activation_pairs['activations_A']]),
-            'activations_B': np.array([act.cpu().numpy() for act in self.state_activation_pairs['activations_B']])
+            'activations_A': np.array(self.state_activation_pairs['activations_A']),
+            'activations_B': np.array(self.state_activation_pairs['activations_B'])
         }
 
         if accumulate and os.path.exists(filename):
@@ -115,7 +121,8 @@ class Buffer:
             save_dict = new_data
             if self.verbose: print(f"Saved {len(new_data['states'])} samples to new file")
 
-        np.savez_compressed(filename, **save_dict)
+        # import pdb;pdb.set_trace()
+        # np.savez_compressed(filename, **save_dict)
 
 
     def load_state_from_png(self, filepath):
@@ -137,8 +144,14 @@ class Buffer:
         norms_per_batch = []
         for i in tqdm.tqdm(range(n_batches_for_norm_estimate), desc="Estimating norm scaling factor"):
             states = self.state_activation_pairs['states'][i * batch_size: (i + 1) * batch_size]
+            states = tf.convert_to_tensor(np.concatenate(states))
+            states = tf.cast(states, tf.float32)
             acts = model(states)
-            norms_per_batch.append(acts.norm(dim=-1).mean().item())
+            sess = tf.Session()
+            init = tf.global_variables_initializer()
+            sess.run(init)
+            acts = acts.eval(session=sess)
+            norms_per_batch.append(np.mean(np.linalg.norm(acts, axis=-1)))
         mean_norm = np.mean(norms_per_batch)
         scaling_factor = np.sqrt(self.cfg['d_model']) / mean_norm
         return scaling_factor
@@ -169,24 +182,27 @@ class Buffer:
                 observation, reward, done, info = self.env.step(action)
 
             obs_tensor = tf.convert_to_tensor(observation)
-            obs_tensor = tf.reshape(obs_tensor, (1,3,64,64))
+            obs_tensor = tf.cast(obs_tensor, tf.float32)
+            # obs_tensor = tf.reshape(obs_tensor, (1,3,64,64))
 
             # Process the observation through both models
             acts_A = self.model_A(obs_tensor)
             acts_B = self.model_B(obs_tensor)
-            with tf.Session() as sess:
-                acts_A = acts_A.eval(session=sess)
-                acts_B = acts_B.eval(session=sess)
-            import pdb;pdb.set_trace()
+            
+            sess = tf.Session()
+            init = tf.global_variables_initializer()
+            sess.run(init)
+            acts_A = acts_A.eval(session=sess)
+            acts_B = acts_B.eval(session=sess)
 
             # Store states and activations for later correlation
-            self.state_activation_pairs['states'].append(observation.copy())
+            self.state_activation_pairs['states'].append(observation)
             self.state_activation_pairs['activations_A'].append(acts_A)
             self.state_activation_pairs['activations_B'].append(acts_B)
             self.save_state_activation_pairs("test_state_acts.npz")
 
             # Stack activations
-            acts = tf.stack([acts_A, acts_B], axis=0)
+            acts = np.stack([acts_A, acts_B], axis=0)
 
             # Store in buffer
             self.buffer[self.pointer: self.pointer + acts.shape[0]] = acts
@@ -194,7 +210,7 @@ class Buffer:
             states_collected += 1
 
         # Shuffle buffer
-        self.buffer = tf.random.shuffle(self.buffer)
+        self.buffer = np.random.shuffle(self.buffer)
         self.pointer = 0
 
 

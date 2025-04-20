@@ -1,8 +1,13 @@
+import warnings
+warnings.filterwarnings('ignore')
+
 import tqdm
 
 import wandb
 from buffer import Buffer
 from crosscoder import CrossCoder
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import tensorflow as tf
 
 class Trainer:
