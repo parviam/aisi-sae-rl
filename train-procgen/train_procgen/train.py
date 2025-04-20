@@ -1,6 +1,14 @@
+import warnings
+warnings.filterwarnings('ignore')
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import tensorflow as tf
-from baselines.ppo2 import ppo2
-from baselines.common.models import build_impala_cnn
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+import sys
+
+# adding Folder_2 to the system path
+sys.path.insert(0, '../../crosscoder-pipeline')
+from baseline_utils import build_impala_cnn, learn
 from baselines.common.mpi_util import setup_mpi_gpus
 from procgen import ProcgenEnv
 from baselines.common.vec_env import (
@@ -57,10 +65,11 @@ def train_fn(env_name, num_envs, distribution_mode, num_levels, start_level,
     conv_fn = lambda x: build_impala_cnn(x, depths=[16, 32, 32], emb_size=256)
 
     logger.info("training")
-    ppo2.learn(
+    learn(
         env=venv,
         network=conv_fn,
         total_timesteps=timesteps_per_proc,
+        model_name='ppo2_model',
         save_interval=save_interval,  # Save checkpoint every x training iterations.
         nsteps=nsteps,
         nminibatches=nminibatches,
@@ -78,6 +87,7 @@ def train_fn(env_name, num_envs, distribution_mode, num_levels, start_level,
         init_fn=None,
         vf_coef=0.5,
         max_grad_norm=0.5,
+        # load_path="/data1/projects/keaton_gt_research/aisi-sae-rl/train-procgen/train_procgen/p-adelarue3-0/500_levels/checkpoints/00100",
     )
 
 def main():
