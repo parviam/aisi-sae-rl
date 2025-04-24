@@ -1,0 +1,15 @@
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.9
+  - mpi4py
+  - pip
+  - ucx  # Required for UCX transport support
+  - cudatoolkit=11.6.0
+
+  - pip:
+    - tensorflow[and-cuda]==2.7.0
+    - gym
+    - procgen
+    - pytest # for baselines

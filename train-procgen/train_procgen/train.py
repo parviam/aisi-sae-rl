@@ -36,7 +36,7 @@ def train_fn(env_name, num_envs, distribution_mode, num_levels, start_level,
         logger.configure(comm=log_comm, dir=checkpoint_dir, format_strs=format_strs)
 
     logger.info("creating environment")
-    print(f"Environment Levels: {num_envs}\t{env_name}\t{num_levels}\t{distribution_mode}")
+    print(f"Environment Levels: {num_envs}\t{env_name}\t{num_levels}\t{distribution_mode}\t{save_interval}")
 
     venv = ProcgenEnv(num_envs=num_envs,
                       env_name=env_name,
@@ -61,13 +61,11 @@ def train_fn(env_name, num_envs, distribution_mode, num_levels, start_level,
         env=venv,
         network=conv_fn,
         total_timesteps=timesteps_per_proc,
-        save_interval=save_interval,  # Save checkpoint every x training iterations.
         nsteps=nsteps,
         nminibatches=nminibatches,
         lam=lam,
         gamma=gamma,
         noptepochs=ppo_epochs,
-        log_interval=1,
         ent_coef=ent_coef,
         mpi_rank_weight=mpi_rank_weight,
         clip_vf=use_vf_clipping,
@@ -78,9 +76,13 @@ def train_fn(env_name, num_envs, distribution_mode, num_levels, start_level,
         init_fn=None,
         vf_coef=0.5,
         max_grad_norm=0.5,
+        save_interval=save_interval
     )
 
 def main():
+    import os
+    os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
+
     parser = argparse.ArgumentParser(description='Process procgen training arguments.')
     parser.add_argument('--env_name', type=str, default='coinrun')
     parser.add_argument('--num_envs', type=int, default=64)
@@ -107,6 +109,8 @@ def main():
 
     if test_worker_interval > 0:
         is_test_worker = rank % test_worker_interval == (test_worker_interval - 1)
+
+    print(f"DEVICE: {tf.test.is_gpu_available()}")
 
     train_fn(args.env_name,
              args.num_envs,

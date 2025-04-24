@@ -11,10 +11,11 @@ def main():
     parser.add_argument('--distribution_mode', type=str, default='easy', help="Environment distribution_mode ('easy' or 'hard')")
     parser.add_argument('--normalize_and_reduce', dest='normalize_and_reduce', action='store_true')
     parser.add_argument('--restrict_training_set', dest='restrict_training_set', action='store_true')
+    parser.add_argument('--csv_file', dest='path to csv_file', default=None)
     parser.add_argument('--save', dest='save', action='store_true')
     args = parser.parse_args()
 
-    run_directory_prefix = main_pcg_sample_entry(args.distribution_mode, args.normalize_and_reduce, args.restrict_training_set)
+    run_directory_prefix = main_pcg_sample_entry(args.distribution_mode, args.normalize_and_reduce, args.restrict_training_set, args.csv_file)
 
     plt.tight_layout()
 
@@ -24,7 +25,7 @@ def main():
     else:
         plt.show()
 
-def main_pcg_sample_entry(distribution_mode, normalize_and_reduce, restrict_training_set):
+def main_pcg_sample_entry(distribution_mode, normalize_and_reduce, restrict_training_set, csv_file=None):
     params = {
         'xtick.labelsize': 12,
         'ytick.labelsize': 12,
@@ -53,6 +54,7 @@ def main_pcg_sample_entry(distribution_mode, normalize_and_reduce, restrict_trai
 
     run_directory_prefix = f"{distribution_mode}-{num_train_levels if restrict_training_set else 'all'}"
     kwargs['run_directory_prefix'] = f"{run_directory_prefix}-run"
+    kwargs["csv_file"] = csv_file
 
     # We throw out the first few datapoints to give the episodic reward buffers time to fill up
     # Otherwise, there could be a short-episode bias
