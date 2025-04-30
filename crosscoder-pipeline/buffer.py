@@ -76,13 +76,26 @@ class Buffer:
             'activations_B': []  # Will store activations from model B
         }
 
-        if self.states_provided:
+        if self.states_provided: # Optionally we can provide pre-generated states as png images
             self.state_files = glob.glob(os.path.join("env_states", "*.png"))
-            if len(self.state_files) == 0:
-                raise ValueError("No PNG files found in env_states folder")
-            if self.verbose:
-                print(f"Found {len(self.state_files)} state files in env_states folder")
+            if len(self.state_files) == 0: raise ValueError("No PNG files found in env_states folder")
+            if self.verbose: print(f"Found {len(self.state_files)} state files in env_states folder")
 
+        # Ryan fix - Load npz file if present
+        npz_file = "test_state_acts.npz"
+        if not self.check_state_activation_file(npz_file):
+            if self.verbose: print(f"Will create a new state activation file: {npz_file}")
+        
+        else: # Load existing data to reuse
+            try:
+                existing_data = np.load(npz_file)
+                self.state_activation_pairs['states'] = list(existing_data['states'])
+                self.state_activation_pairs['activations_A'] = list(existing_data['activations_A'])
+                self.state_activation_pairs['activations_B'] = list(existing_data['activations_B'])
+                if self.verbose: print(f"Loaded {len(self.state_activation_pairs['states'])} existing samples from {npz_file}")
+            except Exception as e:
+                if self.verbose: print(f"Error loading existing data: {str(e)}")
+        
         self.refresh()
         
         # Initialize normalization factors
@@ -122,7 +135,7 @@ class Buffer:
             if self.verbose: print(f"Saved {len(new_data['states'])} samples to new file")
 
         # import pdb;pdb.set_trace()
-        # np.savez_compressed(filename, **save_dict)
+        np.savez_compressed(filename, **save_dict) # Ryan fixed - Was commented out
 
 
     def load_state_from_png(self, filepath):
@@ -139,7 +152,36 @@ class Buffer:
             raise ValueError(f"Invalid state shape: {state.shape}, expected (64, 64, 3)")
         return state
 
+    def check_state_activation_file(self, filename):
+        """ Check if the state activation file exists and is valid. """
+        if not os.path.exists(filename):
+            if self.verbose: print(f"State activation file {filename} does not exist.")
+            return False
+            
+        try:
+            data = np.load(filename)
+                
+            # Check that all three arrays have the same first dimension (number of samples)
+            num_states = len(data['states'])
+            if (len(data['activations_A']) != num_states or 
+                len(data['activations_B']) != num_states):
+                if self.verbose: print(f"Inconsistent number of samples in state activation file.")
+                return False
+                
+            if self.verbose: print(f"Found valid state activation file with {num_states} samples.")
+            return True
+            
+        except Exception as e:
+            if self.verbose: print(f"Error loading state activation file: {str(e)}")
+            backup_name = f"{filename}.backup_{int(time.time())}"
+            try:
+                os.rename(filename, backup_name)
+                if self.verbose: print(f"Renamed corrupted file to {backup_name}")
+            except Exception as backup_error:
+                if self.verbose: print(f"Failed to rename corrupted file: {str(backup_error)}")
+            return False
 
+    
     def estimate_norm_scaling_factor(self, batch_size, model, n_batches_for_norm_estimate: int = 100):
         norms_per_batch = []
         for i in tqdm.tqdm(range(n_batches_for_norm_estimate), desc="Estimating norm scaling factor"):
@@ -210,7 +252,7 @@ class Buffer:
             states_collected += 1
 
         # Shuffle buffer
-        self.buffer = np.random.shuffle(self.buffer)
+        np.random.shuffle(self.buffer) # Ryan fixed. Was previously self.buffer = np.random.shuffle(self.buffer)
         self.pointer = 0
 
 
