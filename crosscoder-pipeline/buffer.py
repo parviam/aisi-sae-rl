@@ -102,6 +102,7 @@ class Buffer:
         estimated_norm_scaling_factor_A = self.estimate_norm_scaling_factor(cfg["model_batch_size"], model_A)
         estimated_norm_scaling_factor_B = self.estimate_norm_scaling_factor(cfg["model_batch_size"], model_B)
 
+
         self.normalisation_factor = tf.constant(
             [estimated_norm_scaling_factor_A, estimated_norm_scaling_factor_B,],
             dtype=tf.float32,
@@ -134,7 +135,6 @@ class Buffer:
             save_dict = new_data
             if self.verbose: print(f"Saved {len(new_data['states'])} samples to new file")
 
-        # import pdb;pdb.set_trace()
         np.savez_compressed(filename, **save_dict) # Ryan fixed - Was commented out
 
 
@@ -244,7 +244,7 @@ class Buffer:
             self.save_state_activation_pairs("test_state_acts.npz")
 
             # Stack activations
-            acts = np.stack([acts_A, acts_B], axis=0)
+            acts = np.stack([acts_A, acts_B], axis=1)
 
             # Store in buffer
             self.buffer[self.pointer: self.pointer + acts.shape[0]] = acts
