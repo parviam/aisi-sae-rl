@@ -41,10 +41,8 @@ class Buffer:
 
     def __init__(self, cfg, model_A, model_B, env_name="coinrun",verbose = False):
         self.cfg = cfg
-        self.buffer_size = cfg["batch_size"] * cfg["buffer_mult"]
         self.states_provided = cfg["states_provided"]
-        self.buffer_batches = self.buffer_size // (cfg["seq_len"] - 1)
-        self.buffer_size = self.buffer_batches * (cfg["seq_len"] - 1)
+        self.buffer_size = cfg["batch_size"] * cfg["buffer_mult"]
         self.model_A = model_A
         self.model_B = model_B
         self.pointer = 0
@@ -54,7 +52,7 @@ class Buffer:
 
         # Initialize buffer to store game states
         self.buffer = np.zeros(
-            (self.buffer_size, 2, cfg['d_model']), # hardcoding 2 for model diffing
+            (self.buffer_size, 2, cfg['d_in']), # hardcoding 2 for model diffing
             dtype=np.float16,
         )
 
@@ -81,7 +79,6 @@ class Buffer:
             if len(self.state_files) == 0: raise ValueError("No PNG files found in env_states folder")
             if self.verbose: print(f"Found {len(self.state_files)} state files in env_states folder")
 
-        # Ryan fix - Load npz file if present
         npz_file = "test_state_acts.npz"
         if not self.check_state_activation_file(npz_file):
             if self.verbose: print(f"Will create a new state activation file: {npz_file}")
@@ -92,11 +89,19 @@ class Buffer:
                 self.state_activation_pairs['states'] = list(existing_data['states'])
                 self.state_activation_pairs['activations_A'] = list(existing_data['activations_A'])
                 self.state_activation_pairs['activations_B'] = list(existing_data['activations_B'])
-                if self.verbose: print(f"Loaded {len(self.state_activation_pairs['states'])} existing samples from {npz_file}")
+                acts = np.concatenate((existing_data['activations_A'], existing_data['activations_B']), axis=1)
+                self.buffer[self.pointer: self.pointer + acts.shape[0]] = acts
+                np.random.shuffle(self.buffer)
+                self.pointer += acts.shape[0]
+                if self.verbose: print(f"Loaded {len(self.state_activation_pairs['activations_A'])} existing samples from {npz_file}")
             except Exception as e:
                 if self.verbose: print(f"Error loading existing data: {str(e)}")
         
-        self.refresh()
+        if self.pointer < self.buffer_size:
+            self.refresh()
+        else:
+            self.pointer = 0
+            self.first = False
         
         # Initialize normalization factors
         estimated_norm_scaling_factor_A = self.estimate_norm_scaling_factor(cfg["model_batch_size"], model_A)
@@ -108,7 +113,7 @@ class Buffer:
             dtype=tf.float32,
         )
 
-    def save_state_activation_pairs(self, filename, accumulate=True):
+    def save_state_activation_pairs(self, filename):
         """Save the collected state-activation pairs to a file
 
         Args:
@@ -120,22 +125,8 @@ class Buffer:
             'activations_A': np.array(self.state_activation_pairs['activations_A']),
             'activations_B': np.array(self.state_activation_pairs['activations_B'])
         }
-
-        if accumulate and os.path.exists(filename):
-            # Load existing data
-            existing_data = np.load(filename)
-            # Concatenate with new data
-            save_dict = {
-                'states': np.concatenate([existing_data['states'], new_data['states']]),
-                'activations_A': np.concatenate([existing_data['activations_A'], new_data['activations_A']]),
-                'activations_B': np.concatenate([existing_data['activations_B'], new_data['activations_B']])
-            }
-            if self.verbose: print(f"Added {len(new_data['states'])} new samples to existing {len(existing_data['states'])} samples")
-        else:
-            save_dict = new_data
-            if self.verbose: print(f"Saved {len(new_data['states'])} samples to new file")
-
-        np.savez_compressed(filename, **save_dict) # Ryan fixed - Was commented out
+        if self.verbose: print(f"Saved {len(new_data['states'])} samples to new file")
+        np.savez_compressed(filename, **new_data)
 
 
     def load_state_from_png(self, filepath):
@@ -182,7 +173,7 @@ class Buffer:
             return False
 
     
-    def estimate_norm_scaling_factor(self, batch_size, model, n_batches_for_norm_estimate: int = 100):
+    def estimate_norm_scaling_factor(self, batch_size, model, n_batches_for_norm_estimate: int = 8):
         norms_per_batch = []
         for i in tqdm.tqdm(range(n_batches_for_norm_estimate), desc="Estimating norm scaling factor"):
             states = self.state_activation_pairs['states'][i * batch_size: (i + 1) * batch_size]
@@ -195,19 +186,21 @@ class Buffer:
             acts = acts.eval(session=sess)
             norms_per_batch.append(np.mean(np.linalg.norm(acts, axis=-1)))
         mean_norm = np.mean(norms_per_batch)
-        scaling_factor = np.sqrt(self.cfg['d_model']) / mean_norm
+        scaling_factor = np.sqrt(self.cfg['d_in']) / mean_norm
         return scaling_factor
 
 
     def refresh(self):
         """Collect new diverse game states to refresh the buffer"""
-        self.pointer = 0
         if self.verbose: print("Refreshing the buffer with new game states!")
 
         if self.first:
-            num_states = self.buffer_batches
+            num_states = self.buffer_size - self.pointer
         else:
-            num_states = self.buffer_batches // 2
+            num_states = self.buffer_size // 2
+            self.state_activation_pairs['states'] = self.state_activation_pairs['states'][:self.buffer_size - num_states]
+            self.state_activation_pairs['activations_A'] = self.state_activation_pairs['activations_A'][:self.buffer_size - num_states]
+            self.state_activation_pairs['activations_B'] = self.state_activation_pairs['activations_B'][:self.buffer_size - num_states]
         self.first = False
 
         states_collected = 0
@@ -241,7 +234,6 @@ class Buffer:
             self.state_activation_pairs['states'].append(observation)
             self.state_activation_pairs['activations_A'].append(acts_A)
             self.state_activation_pairs['activations_B'].append(acts_B)
-            self.save_state_activation_pairs("test_state_acts.npz")
 
             # Stack activations
             acts = np.stack([acts_A, acts_B], axis=1)
@@ -251,8 +243,10 @@ class Buffer:
             self.pointer += acts.shape[0]
             states_collected += 1
 
+        self.save_state_activation_pairs("test_state_acts.npz")
+
         # Shuffle buffer
-        np.random.shuffle(self.buffer) # Ryan fixed. Was previously self.buffer = np.random.shuffle(self.buffer)
+        np.random.shuffle(self.buffer)
         self.pointer = 0
 
 
@@ -262,6 +256,7 @@ class Buffer:
         self.pointer += self.cfg["batch_size"]
 
         if self.pointer > self.buffer.shape[0] // 2 - self.cfg["batch_size"]:
+            self.pointer = 0
             self.refresh()
 
         if self.normalize:
@@ -274,16 +269,16 @@ class Buffer:
 class MockModel:
     """Mock model class for testing"""
 
-    def __init__(self, d_model=64):
-        self.cfg = type('Config', (), {'d_model': d_model})()
+    def __init__(self, d_in=64):
+        self.cfg = type('Config', (), {'d_in': d_in})()
 
     def __call__(self, x):
         # Return a constant tensor with the same batch size as input
-        return tf.ones(self.cfg['d_model'], dtype=tf.float32)
+        return tf.ones(self.cfg['d_in'], dtype=tf.float32)
 
     def run_with_cache(self, states, names_filter=None, return_type=None):
         batch_size = len(states)
-        cache = {names_filter: tf.ones(self.cfg['d_model'], dtype=tf.float32)}
+        cache = {names_filter: tf.ones(self.cfg['d_in'], dtype=tf.float32)}
         return None, cache
 
 
@@ -291,7 +286,6 @@ def main(): # For testing
     test_cfg = {
         "batch_size": 32,
         "buffer_mult": 4,
-        "seq_len": 9,
         "device": "cuda:0" if len(tf.config.list_physical_devices('GPU')) > 0 else "cpu",
         "model_batch_size": 16,
         "hook_point": "hook_point",
@@ -308,7 +302,7 @@ def main(): # For testing
         batch = buffer.next()
         print("\nTest Results:")
         print(f"Batch shape: {batch.shape}")
-        print(f"Expected shape: [{test_cfg['batch_size']}, 2, {self.cfg['d_model']}]")
+        print(f"Expected shape: [{test_cfg['batch_size']}, 2, {self.cfg['d_in']}]")
         print(f"Buffer pointer position: {buffer.pointer}")
         print("Buffer test completed successfully!")
 
