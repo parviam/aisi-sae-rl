@@ -31,15 +31,14 @@ class CrossCoder(tf.keras.Model):
         super().__init__()
         self.cfg = cfg
         d_hidden = self.cfg["dict_size"]
-        d_in = self.cfg["d_in"]
         tf.set_random_seed(self.cfg["seed"])
         self.d_hidden = d_hidden
         self.encoder = tf.keras.layers.Dense(d_hidden, use_bias=True)
         self.decoder = tf.keras.layers.Dense(self.cfg["d_in"], use_bias=True)
 
     def encode(self, x):
-        # x: [batch, n_models, d_model]
-        # Reshape x to [batch * n_models, d_model]
+        # x: [batch, n_models, d_in]
+        # Reshape x to [batch * n_models, d_in]
         x_reshaped = tf.reshape(x, [-1, x.shape[-1]])
         x_enc = self.encoder(x_reshaped)
         # Reshape x_enc back to [batch, d_hidden]
@@ -57,21 +56,21 @@ class CrossCoder(tf.keras.Model):
         return acts_dec
 
     def call(self, x):
-        # x: [batch, n_models, d_model]
+        # x: [batch, n_models, d_in]
         acts = self.encode(x)
         return self.decode(acts)
 
     def get_losses(self, x):
-        # x: [batch, n_models, d_model]
+        # x: [batch, n_models, d_in]
         # x = tf.cast(x, self.dtype)
         acts = self.encode(x)
         # acts: [batch, d_hidden]
         x_reconstruct = self.decode(acts)
         diff = x_reconstruct - x
         squared_diff = diff ** 2
-        l2_per_batch = einops.reduce(squared_diff, 'batch n_models d_model -> batch', 'sum')
+        l2_per_batch = einops.reduce(squared_diff, 'batch n_models d_in -> batch', 'sum')
         l2_loss = tf.reduce_mean(l2_per_batch)
-        total_variance = einops.reduce((x - tf.reduce_mean(x, axis=0)) ** 2, 'batch n_models d_model -> batch', 'sum')
+        total_variance = einops.reduce((x - tf.reduce_mean(x, axis=0)) ** 2, 'batch n_models d_in -> batch', 'sum')
         explained_variance = 1 - l2_per_batch / total_variance
         per_token_l2_loss_A = tf.reduce_sum((x_reconstruct[:, 0, :] - x[:, 0, :]) ** 2, axis=-1)
         total_variance_A = tf.reduce_sum((x[:, 0, :] - tf.reduce_mean(x[:, 0, :])) ** 2, axis=-1)

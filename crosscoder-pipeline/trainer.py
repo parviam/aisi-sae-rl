@@ -33,20 +33,18 @@ class Trainer:
         self.model_A = model_A
         self.model_B = model_B
         self.crosscoder = CrossCoder(cfg)
-        self.buffer = Buffer(cfg, model_A, model_B)
-        self.total_steps = cfg["num_tokens"] // cfg["batch_size"]
+        self.buffer = Buffer(cfg, model_A, model_B, verbose=True)
+        self.total_steps = cfg["training_steps"]
 
 
         custom_lr_schedule = CustomLearningRateSchedule(self.total_steps)
-        self.global_step = tf.Variable(0, trainable=False)
+        self.global_step = 0
         self.learning_rate = custom_lr_schedule.get_learning_rate(cfg["lr"], self.global_step)
         self.optimizer = tf.compat.v1.train.AdamOptimizer(
             learning_rate=self.learning_rate,
             beta1=cfg["beta1"],
             beta2=cfg["beta2"]
         )
-        
-        self.global_step = 0
         wandb.init(project=cfg["wandb_project"], entity=cfg["wandb_entity"])
 
     def get_l1_coeff(self):
@@ -72,7 +70,6 @@ class Trainer:
             loss = losses.l2_loss + self.get_l1_coeff() * losses.l1_loss
         gradients = tape.gradient(loss, self.crosscoder.trainable_variables)
         clipped_gradients, _ = tf.clip_by_global_norm(gradients, 1.0)
-        print(self.crosscoder.trainable_variables)
         self.optimizer.apply_gradients(zip(clipped_gradients, self.crosscoder.trainable_variables))
         
         sess = tf.Session()
