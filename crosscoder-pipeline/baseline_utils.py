@@ -107,12 +107,15 @@ def load_variables(load_path, model_name, variables=None, sess=None):
 
     sess = sess or get_session()
     variables = variables or tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
-
     loaded_params = joblib.load(os.path.expanduser(load_path))
     restores = []
     for v in variables:
         if model_name in v.name:
-            restores.append(v.assign(loaded_params[v.name.split(model_name)[-1]]))
+            lookup_name = model_name + v.name.split(model_name)[-1]
+            if lookup_name not in loaded_params:
+                # edge case for beta1 and beta2
+                lookup_name = v.name.split(model_name)[-1][1:]
+            restores.append(v.assign(loaded_params[lookup_name]))
 
     sess.run(restores)
 
@@ -556,6 +559,7 @@ def learn(
                 logger.logkv("loss/" + lossname, lossval)
 
             logger.dumpkvs()
+        print(f">> {update} % {save_interval} == {update % save_interval} \t {logger.get_dir()} \t {is_mpi_root}")
         if (
             save_interval
             and (update % save_interval == 0 or update == 1)

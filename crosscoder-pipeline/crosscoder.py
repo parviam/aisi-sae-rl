@@ -68,9 +68,9 @@ class CrossCoder(tf.keras.Model):
         x_reconstruct = self.decode(acts)
         diff = x_reconstruct - x
         squared_diff = diff ** 2
-        l2_per_batch = einops.reduce(squared_diff, 'batch n_models d_in -> batch', 'sum')
+        l2_per_batch = tf.reduce_sum(squared_diff, axis=[1,2])#einops.reduce(squared_diff, 'batch n_models d_in -> batch', 'sum')
         l2_loss = tf.reduce_mean(l2_per_batch)
-        total_variance = einops.reduce((x - tf.reduce_mean(x, axis=0)) ** 2, 'batch n_models d_in -> batch', 'sum')
+        total_variance = tf.reduce_sum((x - tf.reduce_mean(x, axis=0)) ** 2, axis=[1, 2])  # → [batch] #total_variance = einops.reduce((x - tf.reduce_mean(x, axis=0)) ** 2, 'batch n_models d_in -> batch', 'sum')
         explained_variance = 1 - l2_per_batch / total_variance
         per_token_l2_loss_A = tf.reduce_sum((x_reconstruct[:, 0, :] - x[:, 0, :]) ** 2, axis=-1)
         total_variance_A = tf.reduce_sum((x[:, 0, :] - tf.reduce_mean(x[:, 0, :])) ** 2, axis=-1)

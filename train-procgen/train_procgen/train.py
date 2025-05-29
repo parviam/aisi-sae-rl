@@ -7,7 +7,10 @@ tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 import sys
 
 # adding Folder_2 to the system path
-sys.path.insert(0, '../../crosscoder-pipeline')
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../crosscoder-pipeline'))
+sys.path.insert(0, project_root)
+print("Python sys.path:", sys.path[:3])
+
 from baseline_utils import build_impala_cnn, learn
 from baselines.common.mpi_util import setup_mpi_gpus
 from procgen import ProcgenEnv
@@ -44,7 +47,7 @@ def train_fn(env_name, num_envs, distribution_mode, num_levels, start_level,
         logger.configure(comm=log_comm, dir=checkpoint_dir, format_strs=format_strs)
 
     logger.info("creating environment")
-    print(f"Environment Levels: {num_envs}\t{env_name}\t{num_levels}\t{distribution_mode}")
+    print(f"Environment Levels: {num_envs}\t{env_name}\t{num_levels}\t{save_interval}")
 
     venv = ProcgenEnv(num_envs=num_envs,
                       env_name=env_name,
@@ -107,7 +110,7 @@ def main():
     args = parser.parse_args()
 
     # Construct the checkpoint directory using the experiment name.
-    checkpoint_dir = f"./p-adelarue3-0/{args.experiment_name}/"
+    checkpoint_dir = f"./p-adelarue3-1/{args.experiment_name}/"
 
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()

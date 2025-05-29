@@ -1,7 +1,7 @@
 # Model related parameters
 seed: 49
-batch_size: 4
-buffer_mult: 8
+batch_size: 4 # timesteps?
+buffer_mult: 8 # batch_size * = buffer
 lr: 0.00025
 iterations_per_weight_update: 256
 training_steps: 100000
@@ -16,6 +16,8 @@ log_every: 100
 save_every: 1000
 states_provided: False
 hook_point: blocks.14.hook_resid_pre
-hf_token: YOUR_HUGGINGFACE_TOKEN
-wandb_project: YOUR_WANDB_PROJECT
-wandb_entity: YOUR_WANDB_ENTITY
+hf_token: INSERT
+wandb_project: INSERT
+wandb_entity: INSERT
+model_a_path: /storage/coda1/p-adelarue3/0/shared/v3/checkpoints/00001
+model_b_path: /storage/coda1/p-adelarue3/0/shared/v3/checkpoints/00060
